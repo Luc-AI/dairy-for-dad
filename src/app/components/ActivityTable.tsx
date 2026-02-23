@@ -383,33 +383,45 @@ function MobilePanel({
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
-      <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto md:hidden">
-        <SheetHeader className="mb-4">
+      <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto md:hidden gap-0 p-0" showCloseButton={false}>
+        <div className="px-4 pt-4 pb-3">
           {activity ? (
-            <>
-              <p className="text-xs text-muted-foreground">{fmtDate(activity.date)}</p>
-              <SheetTitle className="text-base">{activity.name || '—'}</SheetTitle>
-              <p className="text-xs text-muted-foreground capitalize">
-                {fmtActivity(activity.activity_type)}
-              </p>
-            </>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex flex-col gap-0.5 min-w-0">
+                <p className="text-xs text-muted-foreground">{fmtDate(activity.date)}</p>
+                <SheetTitle className="text-base leading-snug">{activity.name || '—'}</SheetTitle>
+                <p className="text-xs text-muted-foreground capitalize">
+                  {fmtActivity(activity.activity_type)}
+                </p>
+              </div>
+              <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground" onClick={onClose} aria-label="Close">
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           ) : (
-            <>
-              <SheetTitle className="text-base">
-                {selectedActivities.length} activities selected
-              </SheetTitle>
-              <p className="text-xs text-muted-foreground">
-                {computeDateRange(selectedActivities)}
-              </p>
-            </>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <SheetTitle className="text-base">
+                  {selectedActivities.length} activities selected
+                </SheetTitle>
+                <p className="text-xs text-muted-foreground">
+                  {computeDateRange(selectedActivities)}
+                </p>
+              </div>
+              <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground" onClick={onClose} aria-label="Close">
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           )}
-        </SheetHeader>
-        <Separator className="mb-4" />
-        {activity ? (
-          <ActivityStats activity={activity} />
-        ) : (
-          <SummaryStats activities={selectedActivities} />
-        )}
+        </div>
+        <Separator />
+        <div className="px-4 py-4">
+          {activity ? (
+            <ActivityStats activity={activity} />
+          ) : (
+            <SummaryStats activities={selectedActivities} />
+          )}
+        </div>
       </SheetContent>
     </Sheet>
   );
