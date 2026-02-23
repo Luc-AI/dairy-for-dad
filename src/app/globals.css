@@ -182,6 +182,9 @@
 }
 
 @layer base {
+  * {
+    border-color: var(--border);
+  }
   body {
     letter-spacing: var(--tracking-normal);
   }

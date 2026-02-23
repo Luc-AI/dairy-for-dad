@@ -1,5 +1,9 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
 
 export default async function LoginPage({
   searchParams,
@@ -25,56 +29,50 @@ export default async function LoginPage({
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 flex items-center justify-center">
+    <main className="min-h-screen bg-background flex items-center justify-center px-4">
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900">Activity Log</h1>
-          <p className="text-sm text-gray-500 mt-1">Sign in to continue</p>
+          <h1 className="text-2xl font-bold text-foreground">Activity Log</h1>
+          <p className="text-sm text-muted-foreground mt-1">Sign in to continue</p>
         </div>
 
-        <form
-          action={signIn}
-          className="bg-white border border-gray-200 rounded-lg shadow-sm px-6 py-8 space-y-4"
-        >
-          <div>
-            <label htmlFor="email" className="block text-xs text-gray-500 mb-1">
-              Email
-            </label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              required
-              autoComplete="email"
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-            />
-          </div>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Sign in</CardTitle>
+            {message && (
+              <CardDescription className="text-destructive">{message}</CardDescription>
+            )}
+          </CardHeader>
+          <CardContent>
+            <form action={signIn} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  name="email"
+                  type="email"
+                  required
+                  autoComplete="email"
+                />
+              </div>
 
-          <div>
-            <label htmlFor="password" className="block text-xs text-gray-500 mb-1">
-              Password
-            </label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              required
-              autoComplete="current-password"
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-            />
-          </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  name="password"
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                />
+              </div>
 
-          {message && (
-            <p className="text-sm text-red-600 text-center">{message}</p>
-          )}
-
-          <button
-            type="submit"
-            className="w-full bg-blue-600 text-white rounded px-4 py-2 text-sm font-semibold hover:bg-blue-700 transition-colors"
-          >
-            Sign in
-          </button>
-        </form>
+              <Button type="submit" className="w-full">
+                Sign in
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
       </div>
     </main>
   );

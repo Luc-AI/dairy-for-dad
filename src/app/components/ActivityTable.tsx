@@ -2,6 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Activity } from '@/lib/supabase';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Separator } from '@/components/ui/separator';
 
 // ---------------------------------------------------------------------------
 // Format helpers
@@ -151,103 +158,61 @@ function saveColumnConfigs(cols: ColumnConfig[]): void {
 }
 
 // ---------------------------------------------------------------------------
-// Side panel — single activity
+// Activity stat block — shared by side panel and sheet
 // ---------------------------------------------------------------------------
 
-function ActivitySidePanel({
-  activity,
-  onClose,
-}: {
-  activity: Activity;
-  onClose: () => void;
-}) {
+function ActivityStats({ activity }: { activity: Activity }) {
   const stat = (label: string, value: string | null) => (
     <div key={label}>
-      <dt className="text-xs text-gray-500">{label}</dt>
-      <dd className="text-sm font-medium text-gray-800">{value || '—'}</dd>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="text-sm font-medium text-foreground">{value || '—'}</dd>
     </div>
   );
 
   return (
-    <div className="w-72 shrink-0 border border-gray-200 rounded-lg bg-white shadow-sm flex flex-col overflow-hidden sticky top-4 max-h-[calc(100vh-2rem)]">
-      {/* Header */}
-      <div className="flex items-start justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">
-        <div className="min-w-0">
-          <p className="text-xs text-gray-500">{fmtDate(activity.date)}</p>
-          <p
-            className="text-sm font-semibold text-gray-800 truncate"
-            title={activity.name ?? ''}
-          >
-            {activity.name || '—'}
+    <div className="space-y-4">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+        {stat('Distance', fmtDistance(activity.distance_m))}
+        {stat('Elevation', fmtElevation(activity.elevation_gain_m))}
+        {stat('Duration', fmtDuration(activity.duration_sec))}
+        {stat('Avg HR', activity.avg_hr != null ? `${activity.avg_hr} bpm` : null)}
+        {stat('Max HR', activity.max_hr != null ? `${activity.max_hr} bpm` : null)}
+        {stat('Avg Power', activity.avg_power != null ? `${activity.avg_power} W` : null)}
+        {stat('TSS', activity.tss != null ? String(activity.tss) : null)}
+        {stat('Avg Speed', activity.avg_speed_kmh != null ? `${activity.avg_speed_kmh} km/h` : null)}
+        {stat('Calories', activity.calories != null ? activity.calories.toLocaleString() : null)}
+        {stat('Avg Temp', fmtTemp(activity.avg_temperature))}
+        {stat('Min Temp', fmtTemp(activity.min_temperature))}
+        {stat('Max Temp', fmtTemp(activity.max_temperature))}
+      </dl>
+
+      {activity.location_name && (
+        <div>
+          <p className="text-xs text-muted-foreground">Location</p>
+          <p className="text-sm text-foreground">{activity.location_name}</p>
+        </div>
+      )}
+
+      {activity.description && (
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
+            Diary Note
           </p>
-          <p className="text-xs text-gray-500 capitalize mt-0.5">
-            {fmtActivity(activity.activity_type)}
+          <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed border-l-4 border-amber-300 pl-3">
+            {activity.description}
           </p>
         </div>
-        <button
-          onClick={onClose}
-          className="ml-2 text-gray-400 hover:text-gray-700 text-xl leading-none shrink-0 mt-0.5"
-          aria-label="Close"
-        >
-          ×
-        </button>
-      </div>
-
-      {/* Stats + note */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
-          {stat('Distance', fmtDistance(activity.distance_m))}
-          {stat('Elevation', fmtElevation(activity.elevation_gain_m))}
-          {stat('Duration', fmtDuration(activity.duration_sec))}
-          {stat('Avg HR', activity.avg_hr != null ? `${activity.avg_hr} bpm` : null)}
-          {stat('Max HR', activity.max_hr != null ? `${activity.max_hr} bpm` : null)}
-          {stat('Avg Power', activity.avg_power != null ? `${activity.avg_power} W` : null)}
-          {stat('TSS', activity.tss != null ? String(activity.tss) : null)}
-          {stat(
-            'Avg Speed',
-            activity.avg_speed_kmh != null ? `${activity.avg_speed_kmh} km/h` : null,
-          )}
-          {stat('Calories', activity.calories != null ? activity.calories.toLocaleString() : null)}
-          {stat('Avg Temp', fmtTemp(activity.avg_temperature))}
-          {stat('Min Temp', fmtTemp(activity.min_temperature))}
-          {stat('Max Temp', fmtTemp(activity.max_temperature))}
-        </dl>
-
-        {activity.location_name && (
-          <div>
-            <p className="text-xs text-gray-500">Location</p>
-            <p className="text-sm text-gray-700">{activity.location_name}</p>
-          </div>
-        )}
-
-        {activity.description && (
-          <div>
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
-              Diary Note
-            </p>
-            <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed border-l-4 border-amber-300 pl-3">
-              {activity.description}
-            </p>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Side panel — multi-activity summary
+// Summary stats — shared by side panel and sheet
 // ---------------------------------------------------------------------------
 
-function SelectionSummaryPanel({
-  activities,
-  onClose,
-}: {
-  activities: Activity[];
-  onClose: () => void;
-}) {
+function SummaryStats({ activities }: { activities: Activity[] }) {
   const count = activities.length;
-
   const totalDistance = activities.reduce((s, a) => s + (a.distance_m ?? 0), 0);
   const totalElevation = activities.reduce((s, a) => s + (a.elevation_gain_m ?? 0), 0);
   const totalDuration = activities.reduce((s, a) => s + (a.duration_sec ?? 0), 0);
@@ -255,14 +220,10 @@ function SelectionSummaryPanel({
   const totalTss = activities.reduce((s, a) => s + (a.tss ?? 0), 0);
 
   const hrVals = activities.map((a) => a.avg_hr).filter((v): v is number => v != null);
-  const avgHr =
-    hrVals.length > 0 ? Math.round(hrVals.reduce((s, v) => s + v, 0) / hrVals.length) : null;
+  const avgHr = hrVals.length > 0 ? Math.round(hrVals.reduce((s, v) => s + v, 0) / hrVals.length) : null;
 
   const powerVals = activities.map((a) => a.avg_power).filter((v): v is number => v != null);
-  const avgPower =
-    powerVals.length > 0
-      ? Math.round(powerVals.reduce((s, v) => s + v, 0) / powerVals.length)
-      : null;
+  const avgPower = powerVals.length > 0 ? Math.round(powerVals.reduce((s, v) => s + v, 0) / powerVals.length) : null;
 
   const dates = [...activities.map((a) => a.date)].sort();
   const dateRange =
@@ -274,41 +235,142 @@ function SelectionSummaryPanel({
 
   const stat = (label: string, value: string) => (
     <div key={label}>
-      <dt className="text-xs text-gray-500">{label}</dt>
-      <dd className="text-sm font-medium text-gray-800">{value}</dd>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="text-sm font-medium text-foreground">{value}</dd>
     </div>
   );
 
   return (
-    <div className="w-72 shrink-0 border border-gray-200 rounded-lg bg-white shadow-sm flex flex-col overflow-hidden sticky top-4 max-h-[calc(100vh-2rem)]">
-      {/* Header */}
-      <div className="flex items-start justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">
+    <div className="space-y-3">
+      <div>
+        <p className="text-sm font-semibold text-foreground">{count} activities selected</p>
+        <p className="text-xs text-muted-foreground mt-0.5">{dateRange}</p>
+      </div>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+        {totalDistance > 0 && stat('Total Distance', fmtDistance(totalDistance))}
+        {totalElevation > 0 && stat('Total Elevation', fmtElevation(totalElevation))}
+        {totalDuration > 0 && stat('Total Duration', fmtDuration(totalDuration))}
+        {avgHr !== null && stat('Avg HR', `${avgHr} bpm`)}
+        {avgPower !== null && stat('Avg Power', `${avgPower} W`)}
+        {totalCalories > 0 && stat('Total Calories', totalCalories.toLocaleString())}
+        {totalTss > 0 && stat('Total TSS', String(totalTss))}
+      </dl>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Side panel — single activity (desktop)
+// ---------------------------------------------------------------------------
+
+function ActivitySidePanel({
+  activity,
+  onClose,
+}: {
+  activity: Activity;
+  onClose: () => void;
+}) {
+  return (
+    <Card className="w-72 shrink-0 flex flex-col overflow-hidden sticky top-4 max-h-[calc(100vh-2rem)]">
+      <CardHeader className="bg-muted border-b px-4 py-3 flex-row items-start justify-between space-y-0">
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-gray-800">{count} activities selected</p>
-          <p className="text-xs text-gray-500 mt-0.5">{dateRange}</p>
+          <p className="text-xs text-muted-foreground">{fmtDate(activity.date)}</p>
+          <p className="text-sm font-semibold text-foreground truncate" title={activity.name ?? ''}>
+            {activity.name || '—'}
+          </p>
+          <p className="text-xs text-muted-foreground capitalize mt-0.5">
+            {fmtActivity(activity.activity_type)}
+          </p>
         </div>
         <button
           onClick={onClose}
-          className="ml-2 text-gray-400 hover:text-gray-700 text-xl leading-none shrink-0 mt-0.5"
+          className="ml-2 text-muted-foreground hover:text-foreground text-xl leading-none shrink-0 mt-0.5"
+          aria-label="Close"
+        >
+          ×
+        </button>
+      </CardHeader>
+      <CardContent className="flex-1 overflow-y-auto px-4 py-3">
+        <ActivityStats activity={activity} />
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Side panel — multi-activity summary (desktop)
+// ---------------------------------------------------------------------------
+
+function SelectionSummaryPanel({
+  activities,
+  onClose,
+}: {
+  activities: Activity[];
+  onClose: () => void;
+}) {
+  return (
+    <Card className="w-72 shrink-0 flex flex-col overflow-hidden sticky top-4 max-h-[calc(100vh-2rem)]">
+      <CardHeader className="bg-muted border-b px-4 py-3 flex-row items-start justify-between space-y-0">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-foreground">{activities.length} activities selected</p>
+        </div>
+        <button
+          onClick={onClose}
+          className="ml-2 text-muted-foreground hover:text-foreground text-xl leading-none shrink-0"
           aria-label="Clear selection"
         >
           ×
         </button>
-      </div>
+      </CardHeader>
+      <CardContent className="flex-1 overflow-y-auto px-4 py-3">
+        <SummaryStats activities={activities} />
+      </CardContent>
+    </Card>
+  );
+}
 
-      {/* Stats */}
-      <div className="flex-1 overflow-y-auto px-4 py-3">
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
-          {totalDistance > 0 && stat('Total Distance', fmtDistance(totalDistance))}
-          {totalElevation > 0 && stat('Total Elevation', fmtElevation(totalElevation))}
-          {totalDuration > 0 && stat('Total Duration', fmtDuration(totalDuration))}
-          {avgHr !== null && stat('Avg HR', `${avgHr} bpm`)}
-          {avgPower !== null && stat('Avg Power', `${avgPower} W`)}
-          {totalCalories > 0 && stat('Total Calories', totalCalories.toLocaleString())}
-          {totalTss > 0 && stat('Total TSS', String(totalTss))}
-        </dl>
-      </div>
-    </div>
+// ---------------------------------------------------------------------------
+// Mobile Sheet panel
+// ---------------------------------------------------------------------------
+
+function MobilePanel({
+  open,
+  onClose,
+  selectedActivities,
+}: {
+  open: boolean;
+  onClose: () => void;
+  selectedActivities: Activity[];
+}) {
+  const isSingle = selectedActivities.length === 1;
+  const activity = isSingle ? selectedActivities[0] : null;
+
+  return (
+    <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
+      <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto md:hidden">
+        <SheetHeader className="mb-4">
+          {activity ? (
+            <>
+              <p className="text-xs text-muted-foreground">{fmtDate(activity.date)}</p>
+              <SheetTitle className="text-base">{activity.name || '—'}</SheetTitle>
+              <p className="text-xs text-muted-foreground capitalize">
+                {fmtActivity(activity.activity_type)}
+              </p>
+            </>
+          ) : (
+            <SheetTitle className="text-base">
+              {selectedActivities.length} activities selected
+            </SheetTitle>
+          )}
+        </SheetHeader>
+        <Separator className="mb-4" />
+        {activity ? (
+          <ActivityStats activity={activity} />
+        ) : (
+          <SummaryStats activities={selectedActivities} />
+        )}
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -334,7 +396,6 @@ export default function ActivityTable() {
   const [dragOverColId, setDragOverColId] = useState<ColumnId | null>(null);
   const resizeRef = useRef<{ colId: ColumnId; startX: number; startWidth: number } | null>(null);
   const tableRef = useRef<HTMLTableElement>(null);
-  const selectAllRef = useRef<HTMLInputElement>(null);
 
   // Keyboard navigation
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
@@ -374,7 +435,6 @@ export default function ActivityTable() {
   }, [fetchActivities]);
 
   // Sync focusedIndex when activities list changes (e.g. after filtering).
-  // Only track position for single-selection to avoid collapsing multi-select.
   useEffect(() => {
     if (selectedIds.size === 1) {
       const [firstId] = selectedIds;
@@ -392,14 +452,8 @@ export default function ActivityTable() {
     row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [focusedIndex]);
 
-  // Update "select all" checkbox indeterminate state
   const allChecked = activities.length > 0 && activities.every((a) => selectedIds.has(a.id));
   const someChecked = activities.some((a) => selectedIds.has(a.id));
-  useEffect(() => {
-    if (selectAllRef.current) {
-      selectAllRef.current.indeterminate = someChecked && !allChecked;
-    }
-  }, [someChecked, allChecked]);
 
   function toggleSort(key: SortKey) {
     setSort((prev) =>
@@ -410,8 +464,8 @@ export default function ActivityTable() {
   }
 
   function SortIcon({ col }: { col: SortKey }) {
-    if (sort.key !== col) return <span className="text-gray-400 ml-1">↕</span>;
-    return <span className="text-blue-500 ml-1">{sort.dir === 'desc' ? '↓' : '↑'}</span>;
+    if (sort.key !== col) return <span className="text-muted-foreground ml-1">↕</span>;
+    return <span className="text-primary ml-1">{sort.dir === 'desc' ? '↓' : '↑'}</span>;
   }
 
   // ---------------------------------------------------------------------------
@@ -423,14 +477,14 @@ export default function ActivityTable() {
     .filter((c) => c.visible)
     .map((c) => COLUMN_DEFS.find((d) => d.id === c.id)!);
 
-  const colSpan = visibleColumns.length + 1; // +1 for checkbox column
+  const colSpan = visibleColumns.length + 1;
 
   function toggleColumnVisibility(id: ColumnId) {
     const visibleCount = columns.filter((c) => c.visible).length;
     setColumns((prev) =>
       prev.map((c) => {
         if (c.id !== id) return c;
-        if (c.visible && visibleCount <= 1) return c; // prevent hiding last column
+        if (c.visible && visibleCount <= 1) return c;
         return { ...c, visible: !c.visible };
       })
     );
@@ -507,7 +561,7 @@ export default function ActivityTable() {
   }
 
   // ---------------------------------------------------------------------------
-  // Keyboard navigation (always single-selects)
+  // Keyboard navigation
   // ---------------------------------------------------------------------------
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
@@ -539,31 +593,26 @@ export default function ActivityTable() {
   function renderCell(a: Activity, colId: ColumnId, isSelected: boolean): React.ReactNode {
     switch (colId) {
       case 'date':
-        return (
-          <span className="font-mono text-gray-700">{fmtDate(a.date)}</span>
-        );
+        return <span className="font-mono text-foreground">{fmtDate(a.date)}</span>;
       case 'name':
         return (
           <span className="inline-flex items-center gap-1.5 truncate">
-            {a.name || <span className="text-gray-400">—</span>}
+            {a.name || <span className="text-muted-foreground">—</span>}
             {!!a.description && (
-              <span
-                className={`text-xs leading-none px-1 py-0.5 rounded border ${
-                  isSelected
-                    ? 'bg-blue-200 border-blue-400 text-blue-800'
-                    : 'bg-gray-100 border-gray-300 text-gray-500'
+              <Badge
+                variant="outline"
+                className={`text-xs leading-none py-0 ${
+                  isSelected ? 'border-primary/60 text-primary' : ''
                 }`}
                 title="Has diary note"
               >
                 note
-              </span>
+              </Badge>
             )}
           </span>
         );
       case 'activity_type':
-        return (
-          <span className="capitalize text-gray-600">{fmtActivity(a.activity_type)}</span>
-        );
+        return <span className="capitalize text-muted-foreground">{fmtActivity(a.activity_type)}</span>;
       case 'distance_m':
         return fmtDistance(a.distance_m);
       case 'elevation_gain_m':
@@ -585,7 +634,6 @@ export default function ActivityTable() {
     }
   }
 
-  // Derived data for panel
   const selectedActivities = activities.filter((a) => selectedIds.has(a.id));
   const panelVisible = selectedIds.size > 0;
 
@@ -598,51 +646,55 @@ export default function ActivityTable() {
       {/* Filters */}
       <div className="flex flex-wrap gap-3 items-end">
         <div className="flex-1 min-w-48">
-          <label className="block text-xs text-gray-500 mb-1">Search</label>
-          <input
+          <label className="block text-xs text-muted-foreground mb-1">Search</label>
+          <Input
             type="text"
             placeholder="Name, location, type…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="h-8 text-sm"
           />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">From</label>
-          <input
+          <label className="block text-xs text-muted-foreground mb-1">From</label>
+          <Input
             type="date"
             value={dateFrom}
             onChange={(e) => setDateFrom(e.target.value)}
-            className="border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="h-8 text-sm"
           />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">To</label>
-          <input
+          <label className="block text-xs text-muted-foreground mb-1">To</label>
+          <Input
             type="date"
             value={dateTo}
             onChange={(e) => setDateTo(e.target.value)}
-            className="border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="h-8 text-sm"
           />
         </div>
         {(search || dateFrom || dateTo) && (
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs"
             onClick={() => {
               setSearch('');
               setDateFrom('');
               setDateTo('');
             }}
-            className="text-xs text-gray-500 hover:text-gray-800 underline pb-1.5"
           >
             Clear
-          </button>
+          </Button>
         )}
 
         {/* Columns button */}
         <div className="relative ml-auto">
-          <button
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs gap-1.5"
             onClick={() => setShowColMenu((v) => !v)}
-            className="flex items-center gap-1.5 text-xs border border-gray-300 rounded px-2.5 py-1.5 text-gray-600 hover:border-gray-400 hover:text-gray-800 bg-white select-none"
           >
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={1.5}>
               <rect x="1" y="3" width="14" height="10" rx="1" />
@@ -650,39 +702,33 @@ export default function ActivityTable() {
               <line x1="11" y1="3" x2="11" y2="13" />
             </svg>
             Columns
-          </button>
+          </Button>
 
           {showColMenu && (
             <>
-              {/* Backdrop */}
-              <div
-                className="fixed inset-0 z-10"
-                onClick={() => setShowColMenu(false)}
-              />
-              <div className="absolute right-0 top-full mt-1 z-20 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-44">
+              <div className="fixed inset-0 z-10" onClick={() => setShowColMenu(false)} />
+              <div className="absolute right-0 top-full mt-1 z-20 bg-popover border border-border rounded-lg shadow-lg py-1 min-w-44">
                 {COLUMN_DEFS.map((def) => {
                   const cfg = columns.find((c) => c.id === def.id)!;
                   const isLast = columns.filter((c) => c.visible).length === 1 && cfg.visible;
                   return (
                     <label
                       key={def.id}
-                      className={`flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer ${isLast ? 'opacity-40 cursor-not-allowed' : ''}`}
+                      className={`flex items-center gap-2 px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent cursor-pointer ${isLast ? 'opacity-40 cursor-not-allowed' : ''}`}
                     >
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={cfg.visible}
                         disabled={isLast}
-                        onChange={() => toggleColumnVisibility(def.id)}
-                        className="rounded border-gray-300 text-blue-500 focus:ring-blue-400"
+                        onCheckedChange={() => toggleColumnVisibility(def.id)}
                       />
                       {def.label}
                     </label>
                   );
                 })}
-                <div className="border-t border-gray-100 mt-1 pt-1 px-3 py-1">
+                <div className="border-t border-border mt-1 pt-1 px-3 py-1">
                   <button
                     onClick={resetColumns}
-                    className="text-xs text-gray-400 hover:text-gray-700"
+                    className="text-xs text-muted-foreground hover:text-foreground"
                   >
                     Reset to default
                   </button>
@@ -693,18 +739,18 @@ export default function ActivityTable() {
         </div>
       </div>
 
-      {/* Status */}
+      {/* Error */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 rounded px-4 py-2 text-sm">
+        <div className="bg-destructive/10 border border-destructive/50 text-destructive rounded px-4 py-2 text-sm">
           Error: {error}
         </div>
       )}
 
-      {/* Table + Side Panel */}
+      {/* Table + Side Panel (desktop) */}
       <div className="flex gap-4 items-start">
         {/* Table */}
-        <div className="flex-1 min-w-0 overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
-          <table ref={tableRef} className="min-w-full divide-y divide-gray-200 text-sm table-fixed">
+        <div className="flex-1 min-w-0 overflow-x-auto rounded-lg border border-border shadow-sm">
+          <table ref={tableRef} className="min-w-full divide-y divide-border text-sm table-fixed">
             <colgroup>
               <col style={{ width: 36 }} />
               {visibleColumns.map((col) => {
@@ -712,15 +758,13 @@ export default function ActivityTable() {
                 return <col key={col.id} style={{ width: cfg.width }} />;
               })}
             </colgroup>
-            <thead className="bg-gray-50">
+            <thead className="bg-muted">
               <tr>
                 {/* Select-all checkbox */}
                 <th className="w-9 px-2 py-2 text-left">
-                  <input
-                    ref={selectAllRef}
-                    type="checkbox"
-                    checked={allChecked}
-                    onChange={() => {
+                  <Checkbox
+                    checked={allChecked ? true : someChecked ? 'indeterminate' : false}
+                    onCheckedChange={() => {
                       if (allChecked) {
                         setSelectedIds(new Set());
                         setFocusedIndex(null);
@@ -728,7 +772,6 @@ export default function ActivityTable() {
                         setSelectedIds(new Set(activities.map((a) => a.id)));
                       }
                     }}
-                    className="rounded border-gray-300 text-blue-500 focus:ring-blue-400"
                     aria-label="Select all"
                   />
                 </th>
@@ -746,11 +789,11 @@ export default function ActivityTable() {
                       onDragEnd={handleDragEnd}
                       onClick={() => col.sortKey && toggleSort(col.sortKey)}
                       className={[
-                        'relative px-3 py-2 text-left text-xs font-semibold text-gray-500',
+                        'relative px-3 py-2 text-left text-xs font-semibold text-muted-foreground',
                         'uppercase tracking-wider select-none whitespace-nowrap',
-                        col.sortKey ? 'cursor-pointer hover:text-gray-800' : 'cursor-grab',
+                        col.sortKey ? 'cursor-pointer hover:text-foreground' : 'cursor-grab',
                         isDragging ? 'opacity-40' : '',
-                        isDragOver ? 'bg-blue-100' : '',
+                        isDragOver ? 'bg-primary/10' : '',
                       ].join(' ')}
                       style={{ width: cfg.width }}
                     >
@@ -767,23 +810,23 @@ export default function ActivityTable() {
                         }}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <div className="absolute right-0.5 top-1/4 h-1/2 w-px bg-gray-300 group-hover:bg-blue-400" />
+                        <div className="absolute right-0.5 top-1/4 h-1/2 w-px bg-border group-hover:bg-primary" />
                       </div>
                     </th>
                   );
                 })}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 bg-white">
+            <tbody className="divide-y divide-border bg-card">
               {loading ? (
                 <tr>
-                  <td colSpan={colSpan} className="px-3 py-8 text-center text-gray-400">
+                  <td colSpan={colSpan} className="px-3 py-8 text-center text-muted-foreground">
                     Loading…
                   </td>
                 </tr>
               ) : activities.length === 0 ? (
                 <tr>
-                  <td colSpan={colSpan} className="px-3 py-8 text-center text-gray-400">
+                  <td colSpan={colSpan} className="px-3 py-8 text-center text-muted-foreground">
                     No activities found.
                   </td>
                 </tr>
@@ -797,10 +840,10 @@ export default function ActivityTable() {
                       data-focused={isFocused ? 'true' : undefined}
                       className={`transition-colors cursor-pointer ${
                         isSelected
-                          ? 'bg-blue-50'
+                          ? 'bg-primary/10'
                           : isFocused
-                            ? 'bg-blue-50/40 outline outline-1 -outline-offset-1 outline-blue-200'
-                            : 'hover:bg-gray-50'
+                            ? 'bg-primary/5 outline outline-1 -outline-offset-1 outline-primary/30'
+                            : 'hover:bg-accent'
                       }`}
                       onClick={() => {
                         const isOnlySelected = selectedIds.size === 1 && isSelected;
@@ -813,15 +856,13 @@ export default function ActivityTable() {
                         }
                       }}
                     >
-                      {/* Checkbox cell — stopPropagation so row click doesn't fire too */}
                       <td
                         className="w-9 px-2 py-2"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={isSelected}
-                          onChange={() => {
+                          onCheckedChange={() => {
                             const adding = !selectedIds.has(a.id);
                             setSelectedIds((prev) => {
                               const next = new Set(prev);
@@ -834,7 +875,6 @@ export default function ActivityTable() {
                             });
                             if (adding) setFocusedIndex(rowIdx);
                           }}
-                          className="rounded border-gray-300 text-blue-500 focus:ring-blue-400"
                           aria-label={`Select ${a.name ?? 'activity'}`}
                         />
                       </td>
@@ -867,9 +907,9 @@ export default function ActivityTable() {
           </table>
         </div>
 
-        {/* Side Panel — always rendered to keep layout stable */}
+        {/* Side Panel — desktop only */}
         <div
-          className={`w-72 shrink-0 transition-opacity duration-150 ${
+          className={`hidden md:block w-72 shrink-0 transition-opacity duration-150 ${
             panelVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
           }`}
         >
@@ -890,18 +930,28 @@ export default function ActivityTable() {
               }}
             />
           ) : (
-            <div className="w-72 h-32 border border-dashed border-gray-200 rounded-lg bg-white flex flex-col items-center justify-center gap-1">
-              <p className="text-xs text-gray-300">Select an activity</p>
+            <div className="w-72 h-32 border border-dashed border-border rounded-lg bg-card flex flex-col items-center justify-center gap-1">
+              <p className="text-xs text-muted-foreground/40">Select an activity</p>
               {activities.length > 0 && (
-                <p className="text-xs text-gray-300">↑↓ to navigate</p>
+                <p className="text-xs text-muted-foreground/40">↑↓ to navigate</p>
               )}
             </div>
           )}
         </div>
       </div>
 
+      {/* Mobile Sheet panel */}
+      <MobilePanel
+        open={panelVisible}
+        onClose={() => {
+          setSelectedIds(new Set());
+          setFocusedIndex(null);
+        }}
+        selectedActivities={selectedActivities}
+      />
+
       {!loading && !error && (
-        <p className="text-xs text-gray-400 text-right">
+        <p className="text-xs text-muted-foreground text-right">
           {activities.length} activit{activities.length === 1 ? 'y' : 'ies'}
         </p>
       )}
