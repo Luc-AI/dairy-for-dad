@@ -14,6 +14,9 @@ export type Activity = {
   calories: number | null;
   avg_power: number | null;
   tss: number | null;
+  avg_temperature: number | null;
+  min_temperature: number | null;
+  max_temperature: number | null;
   start_lat: number | null;
   start_lon: number | null;
   location_name: string | null;

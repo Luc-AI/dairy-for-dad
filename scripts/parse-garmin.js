@@ -20,6 +20,18 @@ const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 
 // ---------------------------------------------------------------------------
+// Load .env.local automatically (no dotenv dependency needed)
+// ---------------------------------------------------------------------------
+
+const envPath = path.join(__dirname, '../.env.local');
+if (fs.existsSync(envPath)) {
+  for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+    const match = line.match(/^\s*([^#][^=]*?)\s*=\s*(.*)\s*$/);
+    if (match) process.env[match[1]] = match[2].replace(/^['"]|['"]$/g, '');
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
 
@@ -36,8 +48,10 @@ const SOURCE_FILES = [
 
 const OUTPUT_FILE = path.join(__dirname, '../data/activities.json');
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+// Support both explicit SUPABASE_URL and the Next.js NEXT_PUBLIC_SUPABASE_URL
+const SUPABASE_URL = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+// Support SUPABASE_SERVICE_KEY or SUPABASE_SERVICE_ROLE_KEY
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const CHUNK_SIZE = 500;
 
@@ -106,6 +120,9 @@ function normalize(raw) {
     calories: toInt(raw.calories),
     avg_power: toInt(raw.avgPower),
     tss: round(raw.trainingStressScore, 1),
+    avg_temperature: round(raw.avgTemperature, 1),
+    min_temperature: round(raw.minTemperature, 1),
+    max_temperature: round(raw.maxTemperature, 1),
     start_lat: raw.startLatitude ?? null,
     start_lon: raw.startLongitude ?? null,
     location_name: raw.locationName || null,

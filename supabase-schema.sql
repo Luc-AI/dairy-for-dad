@@ -16,6 +16,9 @@ CREATE TABLE activities (
   calories      INTEGER,
   avg_power     INTEGER,
   tss           REAL,                  -- trainingStressScore
+  avg_temperature REAL,
+  min_temperature REAL,
+  max_temperature REAL,
   start_lat     REAL,
   start_lon     REAL,
   location_name TEXT,
@@ -23,6 +26,11 @@ CREATE TABLE activities (
 );
 
 CREATE INDEX idx_activities_date ON activities(date DESC);
+
+-- Migration: add temperature columns to existing DB
+-- ALTER TABLE activities ADD COLUMN IF NOT EXISTS avg_temperature REAL;
+-- ALTER TABLE activities ADD COLUMN IF NOT EXISTS min_temperature REAL;
+-- ALTER TABLE activities ADD COLUMN IF NOT EXISTS max_temperature REAL;
 
 -- Diary entries table (future: manual notes per day)
 CREATE TABLE diary_entries (

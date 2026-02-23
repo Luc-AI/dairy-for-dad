@@ -13,13 +13,14 @@ export async function GET(req: NextRequest) {
   const SORTABLE = [
     'date', 'distance_m', 'elevation_gain_m', 'duration_sec',
     'avg_hr', 'calories', 'avg_power', 'tss',
+    'avg_temperature', 'min_temperature', 'max_temperature',
   ];
   const column = SORTABLE.includes(sortBy as string) ? sortBy : 'date';
 
   let query = supabase
     .from('activities')
     .select(
-      'id, date, name, activity_type, duration_sec, distance_m, elevation_gain_m, avg_speed_kmh, avg_hr, max_hr, calories, avg_power, tss, location_name, description'
+      'id, date, name, activity_type, duration_sec, distance_m, elevation_gain_m, avg_speed_kmh, avg_hr, max_hr, calories, avg_power, tss, avg_temperature, min_temperature, max_temperature, location_name, description'
     )
     .order(column as string, { ascending: sortDir });
 
