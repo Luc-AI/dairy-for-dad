@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Activity } from '@/lib/supabase';
+import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -42,6 +43,13 @@ function fmtElevation(m: number | null) {
 function fmtActivity(t: string | null) {
   if (!t) return '—';
   return t.replace(/_/g, ' ');
+}
+
+function computeDateRange(activities: Activity[]): string {
+  const dates = [...activities.map((a) => a.date)].sort();
+  if (dates.length === 0) return '';
+  if (dates[0] === dates[dates.length - 1]) return fmtDate(dates[0]);
+  return `${fmtDate(dates[0])} – ${fmtDate(dates[dates.length - 1])}`;
 }
 
 function fmtTemp(t: number | null) {
@@ -212,7 +220,6 @@ function ActivityStats({ activity }: { activity: Activity }) {
 // ---------------------------------------------------------------------------
 
 function SummaryStats({ activities }: { activities: Activity[] }) {
-  const count = activities.length;
   const totalDistance = activities.reduce((s, a) => s + (a.distance_m ?? 0), 0);
   const totalElevation = activities.reduce((s, a) => s + (a.elevation_gain_m ?? 0), 0);
   const totalDuration = activities.reduce((s, a) => s + (a.duration_sec ?? 0), 0);
@@ -225,14 +232,6 @@ function SummaryStats({ activities }: { activities: Activity[] }) {
   const powerVals = activities.map((a) => a.avg_power).filter((v): v is number => v != null);
   const avgPower = powerVals.length > 0 ? Math.round(powerVals.reduce((s, v) => s + v, 0) / powerVals.length) : null;
 
-  const dates = [...activities.map((a) => a.date)].sort();
-  const dateRange =
-    dates.length === 0
-      ? ''
-      : dates[0] === dates[dates.length - 1]
-        ? fmtDate(dates[0])
-        : `${fmtDate(dates[0])} – ${fmtDate(dates[dates.length - 1])}`;
-
   const stat = (label: string, value: string) => (
     <div key={label}>
       <dt className="text-xs text-muted-foreground">{label}</dt>
@@ -241,21 +240,15 @@ function SummaryStats({ activities }: { activities: Activity[] }) {
   );
 
   return (
-    <div className="space-y-3">
-      <div>
-        <p className="text-sm font-semibold text-foreground">{count} activities selected</p>
-        <p className="text-xs text-muted-foreground mt-0.5">{dateRange}</p>
-      </div>
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
-        {totalDistance > 0 && stat('Total Distance', fmtDistance(totalDistance))}
-        {totalElevation > 0 && stat('Total Elevation', fmtElevation(totalElevation))}
-        {totalDuration > 0 && stat('Total Duration', fmtDuration(totalDuration))}
-        {avgHr !== null && stat('Avg HR', `${avgHr} bpm`)}
-        {avgPower !== null && stat('Avg Power', `${avgPower} W`)}
-        {totalCalories > 0 && stat('Total Calories', totalCalories.toLocaleString())}
-        {totalTss > 0 && stat('Total TSS', String(totalTss))}
-      </dl>
-    </div>
+    <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+      {totalDistance > 0 && stat('Total Distance', fmtDistance(totalDistance))}
+      {totalElevation > 0 && stat('Total Elevation', fmtElevation(totalElevation))}
+      {totalDuration > 0 && stat('Total Duration', fmtDuration(totalDuration))}
+      {avgHr !== null && stat('Avg HR', `${avgHr} bpm`)}
+      {avgPower !== null && stat('Avg Power', `${avgPower} W`)}
+      {totalCalories > 0 && stat('Total Calories', totalCalories.toLocaleString())}
+      {totalTss > 0 && stat('Total TSS', String(totalTss))}
+    </dl>
   );
 }
 
@@ -271,26 +264,29 @@ function ActivitySidePanel({
   onClose: () => void;
 }) {
   return (
-    <Card className="w-72 shrink-0 flex flex-col overflow-hidden sticky top-4 max-h-[calc(100vh-2rem)]">
-      <CardHeader className="bg-muted border-b px-4 py-3 flex-row items-start justify-between space-y-0">
-        <div className="min-w-0">
-          <p className="text-xs text-muted-foreground">{fmtDate(activity.date)}</p>
-          <p className="text-sm font-semibold text-foreground truncate" title={activity.name ?? ''}>
+    <Card className="flex flex-col overflow-hidden h-full">
+      <CardHeader className="bg-muted border-b px-4 py-3 flex-row items-start justify-between space-y-0 gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-foreground truncate leading-snug" title={activity.name ?? ''}>
             {activity.name || '—'}
           </p>
-          <p className="text-xs text-muted-foreground capitalize mt-0.5">
+          <p className="text-xs text-muted-foreground mt-0.5">
             {fmtActivity(activity.activity_type)}
+            <span className="mx-1.5 opacity-40">·</span>
+            {fmtDate(activity.date)}
           </p>
         </div>
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 shrink-0 -mr-1 -mt-0.5 text-muted-foreground"
           onClick={onClose}
-          className="ml-2 text-muted-foreground hover:text-foreground text-xl leading-none shrink-0 mt-0.5"
           aria-label="Close"
         >
-          ×
-        </button>
+          <X className="h-3.5 w-3.5" />
+        </Button>
       </CardHeader>
-      <CardContent className="flex-1 overflow-y-auto px-4 py-3">
+      <CardContent className="flex-1 overflow-y-auto px-4 py-4">
         <ActivityStats activity={activity} />
       </CardContent>
     </Card>
@@ -308,21 +304,29 @@ function SelectionSummaryPanel({
   activities: Activity[];
   onClose: () => void;
 }) {
+  const dateRange = computeDateRange(activities);
   return (
-    <Card className="w-72 shrink-0 flex flex-col overflow-hidden sticky top-4 max-h-[calc(100vh-2rem)]">
-      <CardHeader className="bg-muted border-b px-4 py-3 flex-row items-start justify-between space-y-0">
+    <Card className="flex flex-col overflow-hidden h-full">
+      <CardHeader className="bg-muted border-b px-4 py-3 flex-row items-start justify-between space-y-0 gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-foreground">{activities.length} activities selected</p>
+          <p className="text-sm font-semibold text-foreground leading-snug">
+            {activities.length} activities selected
+          </p>
+          {dateRange && (
+            <p className="text-xs text-muted-foreground mt-0.5">{dateRange}</p>
+          )}
         </div>
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 shrink-0 -mr-1 -mt-0.5 text-muted-foreground"
           onClick={onClose}
-          className="ml-2 text-muted-foreground hover:text-foreground text-xl leading-none shrink-0"
           aria-label="Clear selection"
         >
-          ×
-        </button>
+          <X className="h-3.5 w-3.5" />
+        </Button>
       </CardHeader>
-      <CardContent className="flex-1 overflow-y-auto px-4 py-3">
+      <CardContent className="flex-1 overflow-y-auto px-4 py-4">
         <SummaryStats activities={activities} />
       </CardContent>
     </Card>
@@ -358,9 +362,14 @@ function MobilePanel({
               </p>
             </>
           ) : (
-            <SheetTitle className="text-base">
-              {selectedActivities.length} activities selected
-            </SheetTitle>
+            <>
+              <SheetTitle className="text-base">
+                {selectedActivities.length} activities selected
+              </SheetTitle>
+              <p className="text-xs text-muted-foreground">
+                {computeDateRange(selectedActivities)}
+              </p>
+            </>
           )}
         </SheetHeader>
         <Separator className="mb-4" />
@@ -399,7 +408,7 @@ export default function ActivityTable() {
   }, []);
 
   // Column management
-  const [columns, setColumns] = useState<ColumnConfig[]>(() => loadColumnConfigs());
+  const [columns, setColumns] = useState<ColumnConfig[]>(() => defaultColumnConfigs());
   const [showColMenu, setShowColMenu] = useState(false);
   const [dragColId, setDragColId] = useState<ColumnId | null>(null);
   const [dragOverColId, setDragOverColId] = useState<ColumnId | null>(null);
@@ -408,6 +417,11 @@ export default function ActivityTable() {
 
   // Keyboard navigation
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
+
+  // Load persisted column config from localStorage after hydration
+  useEffect(() => {
+    setColumns(loadColumnConfigs());
+  }, []);
 
   // Persist column config to localStorage
   useEffect(() => {
@@ -756,9 +770,9 @@ export default function ActivityTable() {
       )}
 
       {/* Table + Side Panel (desktop) */}
-      <div className="flex gap-4 items-start">
+      <div className="flex gap-4 items-stretch">
         {/* Table */}
-        <div className="flex-1 min-w-0 overflow-x-auto rounded-lg border border-border shadow-sm">
+        <div className="flex-1 min-w-0 overflow-x-auto rounded-lg border border-border shadow-sm self-start">
           <table ref={tableRef} className="min-w-full divide-y divide-border text-sm table-fixed">
             <colgroup>
               <col style={{ width: 36 }} />
@@ -922,30 +936,25 @@ export default function ActivityTable() {
             panelVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
           }`}
         >
-          {selectedIds.size === 1 && selectedActivities[0] ? (
-            <ActivitySidePanel
-              activity={selectedActivities[0]}
-              onClose={() => {
-                setSelectedIds(new Set());
-                setFocusedIndex(null);
-              }}
-            />
-          ) : selectedIds.size >= 2 ? (
-            <SelectionSummaryPanel
-              activities={selectedActivities}
-              onClose={() => {
-                setSelectedIds(new Set());
-                setFocusedIndex(null);
-              }}
-            />
-          ) : (
-            <div className="w-72 h-32 border border-dashed border-border rounded-lg bg-card flex flex-col items-center justify-center gap-1">
-              <p className="text-xs text-muted-foreground/40">Select an activity</p>
-              {activities.length > 0 && (
-                <p className="text-xs text-muted-foreground/40">↑↓ to navigate</p>
-              )}
-            </div>
-          )}
+          <div className="sticky top-4 max-h-[calc(100vh-3rem)] flex flex-col">
+            {selectedIds.size === 1 && selectedActivities[0] ? (
+              <ActivitySidePanel
+                activity={selectedActivities[0]}
+                onClose={() => {
+                  setSelectedIds(new Set());
+                  setFocusedIndex(null);
+                }}
+              />
+            ) : selectedIds.size >= 2 ? (
+              <SelectionSummaryPanel
+                activities={selectedActivities}
+                onClose={() => {
+                  setSelectedIds(new Set());
+                  setFocusedIndex(null);
+                }}
+              />
+            ) : null}
+          </div>
         </div>
       </div>
 
