@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase, type Activity } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/server';
+import type { Activity } from '@/lib/supabase';
 
 export async function GET(req: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const { searchParams } = req.nextUrl;
 
   const search = searchParams.get('search') ?? '';
