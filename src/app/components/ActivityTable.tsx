@@ -389,6 +389,15 @@ export default function ActivityTable() {
   const [sort, setSort] = useState<SortState>({ key: 'date', dir: 'desc' });
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    setIsMobile(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
   // Column management
   const [columns, setColumns] = useState<ColumnConfig[]>(() => loadColumnConfigs());
   const [showColMenu, setShowColMenu] = useState(false);
@@ -942,7 +951,7 @@ export default function ActivityTable() {
 
       {/* Mobile Sheet panel */}
       <MobilePanel
-        open={panelVisible}
+        open={panelVisible && isMobile}
         onClose={() => {
           setSelectedIds(new Set());
           setFocusedIndex(null);
