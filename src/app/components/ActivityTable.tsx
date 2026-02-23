@@ -151,7 +151,7 @@ function saveColumnConfigs(cols: ColumnConfig[]): void {
 }
 
 // ---------------------------------------------------------------------------
-// Side panel
+// Side panel — single activity
 // ---------------------------------------------------------------------------
 
 function ActivitySidePanel({
@@ -236,6 +236,83 @@ function ActivitySidePanel({
 }
 
 // ---------------------------------------------------------------------------
+// Side panel — multi-activity summary
+// ---------------------------------------------------------------------------
+
+function SelectionSummaryPanel({
+  activities,
+  onClose,
+}: {
+  activities: Activity[];
+  onClose: () => void;
+}) {
+  const count = activities.length;
+
+  const totalDistance = activities.reduce((s, a) => s + (a.distance_m ?? 0), 0);
+  const totalElevation = activities.reduce((s, a) => s + (a.elevation_gain_m ?? 0), 0);
+  const totalDuration = activities.reduce((s, a) => s + (a.duration_sec ?? 0), 0);
+  const totalCalories = activities.reduce((s, a) => s + (a.calories ?? 0), 0);
+  const totalTss = activities.reduce((s, a) => s + (a.tss ?? 0), 0);
+
+  const hrVals = activities.map((a) => a.avg_hr).filter((v): v is number => v != null);
+  const avgHr =
+    hrVals.length > 0 ? Math.round(hrVals.reduce((s, v) => s + v, 0) / hrVals.length) : null;
+
+  const powerVals = activities.map((a) => a.avg_power).filter((v): v is number => v != null);
+  const avgPower =
+    powerVals.length > 0
+      ? Math.round(powerVals.reduce((s, v) => s + v, 0) / powerVals.length)
+      : null;
+
+  const dates = [...activities.map((a) => a.date)].sort();
+  const dateRange =
+    dates.length === 0
+      ? ''
+      : dates[0] === dates[dates.length - 1]
+        ? fmtDate(dates[0])
+        : `${fmtDate(dates[0])} – ${fmtDate(dates[dates.length - 1])}`;
+
+  const stat = (label: string, value: string) => (
+    <div key={label}>
+      <dt className="text-xs text-gray-500">{label}</dt>
+      <dd className="text-sm font-medium text-gray-800">{value}</dd>
+    </div>
+  );
+
+  return (
+    <div className="w-72 shrink-0 border border-gray-200 rounded-lg bg-white shadow-sm flex flex-col overflow-hidden sticky top-4 max-h-[calc(100vh-2rem)]">
+      {/* Header */}
+      <div className="flex items-start justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-gray-800">{count} activities selected</p>
+          <p className="text-xs text-gray-500 mt-0.5">{dateRange}</p>
+        </div>
+        <button
+          onClick={onClose}
+          className="ml-2 text-gray-400 hover:text-gray-700 text-xl leading-none shrink-0 mt-0.5"
+          aria-label="Clear selection"
+        >
+          ×
+        </button>
+      </div>
+
+      {/* Stats */}
+      <div className="flex-1 overflow-y-auto px-4 py-3">
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+          {totalDistance > 0 && stat('Total Distance', fmtDistance(totalDistance))}
+          {totalElevation > 0 && stat('Total Elevation', fmtElevation(totalElevation))}
+          {totalDuration > 0 && stat('Total Duration', fmtDuration(totalDuration))}
+          {avgHr !== null && stat('Avg HR', `${avgHr} bpm`)}
+          {avgPower !== null && stat('Avg Power', `${avgPower} W`)}
+          {totalCalories > 0 && stat('Total Calories', totalCalories.toLocaleString())}
+          {totalTss > 0 && stat('Total TSS', String(totalTss))}
+        </dl>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -248,7 +325,7 @@ export default function ActivityTable() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [sort, setSort] = useState<SortState>({ key: 'date', dir: 'desc' });
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   // Column management
   const [columns, setColumns] = useState<ColumnConfig[]>(() => loadColumnConfigs());
@@ -257,6 +334,7 @@ export default function ActivityTable() {
   const [dragOverColId, setDragOverColId] = useState<ColumnId | null>(null);
   const resizeRef = useRef<{ colId: ColumnId; startX: number; startWidth: number } | null>(null);
   const tableRef = useRef<HTMLTableElement>(null);
+  const selectAllRef = useRef<HTMLInputElement>(null);
 
   // Keyboard navigation
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
@@ -295,22 +373,17 @@ export default function ActivityTable() {
     return () => clearTimeout(timer);
   }, [fetchActivities]);
 
-  // Sync focusedIndex when activities list changes (e.g. after filtering)
+  // Sync focusedIndex when activities list changes (e.g. after filtering).
+  // Only track position for single-selection to avoid collapsing multi-select.
   useEffect(() => {
-    if (selectedId !== null) {
-      const idx = activities.findIndex((a) => a.id === selectedId);
+    if (selectedIds.size === 1) {
+      const [firstId] = selectedIds;
+      const idx = activities.findIndex((a) => a.id === firstId);
       setFocusedIndex(idx === -1 ? null : idx);
     }
-    // intentionally omit selectedId to avoid loop
+    // intentionally omit selectedIds to avoid loop
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activities]);
-
-  // Sync selectedId when focusedIndex changes (keyboard nav)
-  useEffect(() => {
-    if (focusedIndex !== null && activities[focusedIndex]) {
-      setSelectedId(activities[focusedIndex].id);
-    }
-  }, [focusedIndex, activities]);
 
   // Scroll focused row into view
   useEffect(() => {
@@ -318,6 +391,15 @@ export default function ActivityTable() {
     const row = tableRef.current?.querySelector('tr[data-focused="true"]');
     row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [focusedIndex]);
+
+  // Update "select all" checkbox indeterminate state
+  const allChecked = activities.length > 0 && activities.every((a) => selectedIds.has(a.id));
+  const someChecked = activities.some((a) => selectedIds.has(a.id));
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someChecked && !allChecked;
+    }
+  }, [someChecked, allChecked]);
 
   function toggleSort(key: SortKey) {
     setSort((prev) =>
@@ -341,7 +423,7 @@ export default function ActivityTable() {
     .filter((c) => c.visible)
     .map((c) => COLUMN_DEFS.find((d) => d.id === c.id)!);
 
-  const colSpan = visibleColumns.length;
+  const colSpan = visibleColumns.length + 1; // +1 for checkbox column
 
   function toggleColumnVisibility(id: ColumnId) {
     const visibleCount = columns.filter((c) => c.visible).length;
@@ -425,23 +507,29 @@ export default function ActivityTable() {
   }
 
   // ---------------------------------------------------------------------------
-  // Keyboard navigation
+  // Keyboard navigation (always single-selects)
   // ---------------------------------------------------------------------------
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     if (activities.length === 0) return;
     e.preventDefault();
-    setFocusedIndex((prev) => {
-      if (prev === null) {
-        const idx =
-          selectedId !== null ? activities.findIndex((a) => a.id === selectedId) : -1;
-        return e.key === 'ArrowDown' ? Math.max(idx + 1, 0) : Math.max(idx - 1, 0);
-      }
-      return e.key === 'ArrowDown'
-        ? Math.min(prev + 1, activities.length - 1)
-        : Math.max(prev - 1, 0);
-    });
+
+    const baseIdx =
+      focusedIndex ??
+      (selectedIds.size === 1
+        ? activities.findIndex((a) => a.id === [...selectedIds][0])
+        : -1);
+
+    const newIdx =
+      e.key === 'ArrowDown'
+        ? Math.min(baseIdx + 1, activities.length - 1)
+        : Math.max(baseIdx - 1, 0);
+
+    if (activities[newIdx]) {
+      setFocusedIndex(newIdx);
+      setSelectedIds(new Set([activities[newIdx].id]));
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -497,7 +585,9 @@ export default function ActivityTable() {
     }
   }
 
-  const selectedActivity = activities.find((a) => a.id === selectedId) ?? null;
+  // Derived data for panel
+  const selectedActivities = activities.filter((a) => selectedIds.has(a.id));
+  const panelVisible = selectedIds.size > 0;
 
   return (
     <div
@@ -616,6 +706,7 @@ export default function ActivityTable() {
         <div className="flex-1 min-w-0 overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
           <table ref={tableRef} className="min-w-full divide-y divide-gray-200 text-sm table-fixed">
             <colgroup>
+              <col style={{ width: 36 }} />
               {visibleColumns.map((col) => {
                 const cfg = columns.find((c) => c.id === col.id)!;
                 return <col key={col.id} style={{ width: cfg.width }} />;
@@ -623,6 +714,24 @@ export default function ActivityTable() {
             </colgroup>
             <thead className="bg-gray-50">
               <tr>
+                {/* Select-all checkbox */}
+                <th className="w-9 px-2 py-2 text-left">
+                  <input
+                    ref={selectAllRef}
+                    type="checkbox"
+                    checked={allChecked}
+                    onChange={() => {
+                      if (allChecked) {
+                        setSelectedIds(new Set());
+                        setFocusedIndex(null);
+                      } else {
+                        setSelectedIds(new Set(activities.map((a) => a.id)));
+                      }
+                    }}
+                    className="rounded border-gray-300 text-blue-500 focus:ring-blue-400"
+                    aria-label="Select all"
+                  />
+                </th>
                 {visibleColumns.map((col) => {
                   const cfg = columns.find((c) => c.id === col.id)!;
                   const isDragging = dragColId === col.id;
@@ -680,7 +789,7 @@ export default function ActivityTable() {
                 </tr>
               ) : (
                 activities.map((a, rowIdx) => {
-                  const isSelected = selectedId === a.id;
+                  const isSelected = selectedIds.has(a.id);
                   const isFocused = focusedIndex === rowIdx;
                   return (
                     <tr
@@ -694,11 +803,41 @@ export default function ActivityTable() {
                             : 'hover:bg-gray-50'
                       }`}
                       onClick={() => {
-                        const next = isSelected ? null : a.id;
-                        setSelectedId(next);
-                        setFocusedIndex(next === null ? null : rowIdx);
+                        const isOnlySelected = selectedIds.size === 1 && isSelected;
+                        if (isOnlySelected) {
+                          setSelectedIds(new Set());
+                          setFocusedIndex(null);
+                        } else {
+                          setSelectedIds(new Set([a.id]));
+                          setFocusedIndex(rowIdx);
+                        }
                       }}
                     >
+                      {/* Checkbox cell — stopPropagation so row click doesn't fire too */}
+                      <td
+                        className="w-9 px-2 py-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {
+                            const adding = !selectedIds.has(a.id);
+                            setSelectedIds((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(a.id)) {
+                                next.delete(a.id);
+                              } else {
+                                next.add(a.id);
+                              }
+                              return next;
+                            });
+                            if (adding) setFocusedIndex(rowIdx);
+                          }}
+                          className="rounded border-gray-300 text-blue-500 focus:ring-blue-400"
+                          aria-label={`Select ${a.name ?? 'activity'}`}
+                        />
+                      </td>
                       {visibleColumns.map((col) => (
                         <td
                           key={col.id}
@@ -731,14 +870,22 @@ export default function ActivityTable() {
         {/* Side Panel — always rendered to keep layout stable */}
         <div
           className={`w-72 shrink-0 transition-opacity duration-150 ${
-            selectedActivity ? 'opacity-100' : 'opacity-0 pointer-events-none'
+            panelVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
           }`}
         >
-          {selectedActivity ? (
+          {selectedIds.size === 1 && selectedActivities[0] ? (
             <ActivitySidePanel
-              activity={selectedActivity}
+              activity={selectedActivities[0]}
               onClose={() => {
-                setSelectedId(null);
+                setSelectedIds(new Set());
+                setFocusedIndex(null);
+              }}
+            />
+          ) : selectedIds.size >= 2 ? (
+            <SelectionSummaryPanel
+              activities={selectedActivities}
+              onClose={() => {
+                setSelectedIds(new Set());
                 setFocusedIndex(null);
               }}
             />
