@@ -100,3 +100,31 @@ export function normalizeActivity(raw: RawSummarizedActivity): Activity | null {
     description: raw.description ?? null,
   };
 }
+
+/**
+ * Parse a `*_summarizedActivities.json` file body.
+ * Handles both root shapes Garmin emits:
+ *   [{ summarizedActivitiesExport: [...] }]   ← array-wrapped
+ *   { summarizedActivitiesExport: [...] }     ← bare object
+ * Throws on invalid JSON. Returns [] if the export key is missing.
+ */
+export function parseSummarizedActivitiesJson(text: string): RawSummarizedActivity[] {
+  const parsed = JSON.parse(text);
+  const root = Array.isArray(parsed) ? parsed[0] : parsed;
+  if (!root || typeof root !== 'object') return [];
+  const arr = (root as { summarizedActivitiesExport?: unknown }).summarizedActivitiesExport;
+  return Array.isArray(arr) ? (arr as RawSummarizedActivity[]) : [];
+}
+
+/** Deduplicate raw activities by activityId, keeping the first occurrence. */
+export function dedupeById(raws: RawSummarizedActivity[]): RawSummarizedActivity[] {
+  const seen = new Set<number>();
+  const out: RawSummarizedActivity[] = [];
+  for (const r of raws) {
+    if (!seen.has(r.activityId)) {
+      seen.add(r.activityId);
+      out.push(r);
+    }
+  }
+  return out;
+}

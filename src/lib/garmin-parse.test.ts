@@ -8,6 +8,7 @@ import {
   toInt,
 } from './garmin-parse';
 import { normalizeActivity } from './garmin-parse';
+import { parseSummarizedActivitiesJson, dedupeById } from './garmin-parse';
 
 describe('unit conversions', () => {
   it('cmToM: 834424 cm → 8344.24 m, rounded to 1 decimal', () => {
@@ -86,5 +87,43 @@ describe('normalizeActivity', () => {
     expect(result!.activity_type).toBeNull();
     expect(result!.avg_hr).toBeNull();
     expect(result!.location_name).toBeNull();
+  });
+});
+
+describe('parseSummarizedActivitiesJson', () => {
+  const TS = 1336521600000;
+  const raw = (id: number) => ({ activityId: id, beginTimestamp: TS });
+
+  it('parses array-wrapped root', () => {
+    const json = JSON.stringify([{ summarizedActivitiesExport: [raw(1), raw(2)] }]);
+    expect(parseSummarizedActivitiesJson(json)).toEqual([raw(1), raw(2)]);
+  });
+
+  it('parses bare-object root', () => {
+    const json = JSON.stringify({ summarizedActivitiesExport: [raw(3)] });
+    expect(parseSummarizedActivitiesJson(json)).toEqual([raw(3)]);
+  });
+
+  it('returns empty array when summarizedActivitiesExport is missing', () => {
+    expect(parseSummarizedActivitiesJson('{}')).toEqual([]);
+    expect(parseSummarizedActivitiesJson('[]')).toEqual([]);
+  });
+
+  it('throws on invalid JSON', () => {
+    expect(() => parseSummarizedActivitiesJson('not json')).toThrow();
+  });
+});
+
+describe('dedupeById', () => {
+  it('keeps the first occurrence of each id', () => {
+    const TS = 1336521600000;
+    const a1 = { activityId: 1, beginTimestamp: TS, name: 'first' };
+    const a2 = { activityId: 1, beginTimestamp: TS, name: 'second' };
+    const a3 = { activityId: 2, beginTimestamp: TS, name: 'other' };
+    expect(dedupeById([a1, a2, a3])).toEqual([a1, a3]);
+  });
+
+  it('returns empty for empty input', () => {
+    expect(dedupeById([])).toEqual([]);
   });
 });
