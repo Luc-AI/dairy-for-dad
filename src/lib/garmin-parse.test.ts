@@ -7,6 +7,7 @@ import {
   round,
   toInt,
 } from './garmin-parse';
+import { normalizeActivity } from './garmin-parse';
 
 describe('unit conversions', () => {
   it('cmToM: 834424 cm → 8344.24 m, rounded to 1 decimal', () => {
@@ -42,5 +43,48 @@ describe('unit conversions', () => {
   it('toInt: rounds to integer', () => {
     expect(toInt(12.7)).toBe(13);
     expect(toInt(null)).toBeNull();
+  });
+});
+
+describe('normalizeActivity', () => {
+  it('normalizes the canonical Prag run (id 178259890)', () => {
+    const raw = {
+      activityId: 178259890,
+      beginTimestamp: 1336521600000, // 2012-05-09 UTC
+      name: 'Prag',
+      activityType: 'running',
+      duration: 2945000,
+      distance: 834424, // cm
+      elevationGain: 5000, // cm
+      avgSpeed: null,
+      avgHr: 150,
+      maxHr: 175,
+      calories: 600,
+    };
+    const result = normalizeActivity(raw);
+    expect(result).not.toBeNull();
+    expect(result!.id).toBe(178259890);
+    expect(result!.date).toBe('2012-05-09');
+    expect(result!.distance_m).toBe(8344.24);
+    expect(result!.duration_sec).toBe(2945);
+    expect(result!.elevation_gain_m).toBe(50);
+    expect(result!.avg_hr).toBe(150);
+  });
+
+  it('returns null when beginTimestamp is missing', () => {
+    expect(normalizeActivity({ activityId: 1 })).toBeNull();
+    expect(normalizeActivity({ activityId: 2, beginTimestamp: null })).toBeNull();
+  });
+
+  it('coerces missing optional fields to null', () => {
+    const result = normalizeActivity({
+      activityId: 99,
+      beginTimestamp: 1336521600000,
+    });
+    expect(result).not.toBeNull();
+    expect(result!.name).toBeNull();
+    expect(result!.activity_type).toBeNull();
+    expect(result!.avg_hr).toBeNull();
+    expect(result!.location_name).toBeNull();
   });
 });

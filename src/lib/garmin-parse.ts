@@ -71,3 +71,32 @@ export function toInt(v: number | null | undefined): number | null {
   if (v == null || Number.isNaN(v)) return null;
   return Math.round(v);
 }
+
+/** Normalize a raw Garmin record into our `Activity` row shape. Returns null if no usable date. */
+export function normalizeActivity(raw: RawSummarizedActivity): Activity | null {
+  const date = msToDate(raw.beginTimestamp);
+  if (!date) return null;
+
+  return {
+    id: raw.activityId,
+    date,
+    name: raw.name ?? null,
+    activity_type: raw.activityType ?? null,
+    duration_sec: msToSec(raw.duration),
+    distance_m: cmToM(raw.distance),
+    elevation_gain_m: cmToM(raw.elevationGain),
+    avg_speed_kmh: cmPerMsToKmh(raw.avgSpeed),
+    avg_hr: toInt(raw.avgHr),
+    max_hr: toInt(raw.maxHr),
+    calories: toInt(raw.calories),
+    avg_power: toInt(raw.avgPower),
+    tss: round(raw.trainingStressScore, 1),
+    avg_temperature: round(raw.avgTemperature, 1),
+    min_temperature: round(raw.minTemperature, 1),
+    max_temperature: round(raw.maxTemperature, 1),
+    start_lat: raw.startLatitude ?? null,
+    start_lon: raw.startLongitude ?? null,
+    location_name: raw.locationName ?? null,
+    description: raw.description ?? null,
+  };
+}
