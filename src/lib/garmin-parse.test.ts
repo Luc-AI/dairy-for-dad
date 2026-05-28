@@ -9,6 +9,7 @@ import {
 } from './garmin-parse';
 import { normalizeActivity } from './garmin-parse';
 import { parseSummarizedActivitiesJson, dedupeById } from './garmin-parse';
+import { parseFiles } from './garmin-parse';
 
 describe('unit conversions', () => {
   it('cmToM: 834424 cm → 8344.24 m, rounded to 1 decimal', () => {
@@ -125,5 +126,45 @@ describe('dedupeById', () => {
 
   it('returns empty for empty input', () => {
     expect(dedupeById([])).toEqual([]);
+  });
+});
+
+describe('parseFiles', () => {
+  const TS = 1336521600000;
+
+  it('parses, dedupes across files, and normalizes', () => {
+    const fileA = JSON.stringify({
+      summarizedActivitiesExport: [
+        { activityId: 1, beginTimestamp: TS, name: 'A1' },
+        { activityId: 2, beginTimestamp: TS, name: 'A2' },
+      ],
+    });
+    const fileB = JSON.stringify([
+      {
+        summarizedActivitiesExport: [
+          { activityId: 2, beginTimestamp: TS, name: 'B2 dup' }, // dup of A2
+          { activityId: 3, beginTimestamp: TS, name: 'B3' },
+        ],
+      },
+    ]);
+    const result = parseFiles([fileA, fileB]);
+    expect(result.activities).toHaveLength(3);
+    expect(result.activities.map((a) => a.id).sort()).toEqual([1, 2, 3]);
+    // First occurrence wins — A2 came from fileA
+    expect(result.activities.find((a) => a.id === 2)!.name).toBe('A2');
+    expect(result.skippedNoTimestamp).toBe(0);
+  });
+
+  it('counts activities skipped for missing beginTimestamp', () => {
+    const file = JSON.stringify({
+      summarizedActivitiesExport: [
+        { activityId: 1, beginTimestamp: TS },
+        { activityId: 2 }, // no timestamp
+        { activityId: 3, beginTimestamp: null },
+      ],
+    });
+    const result = parseFiles([file]);
+    expect(result.activities).toHaveLength(1);
+    expect(result.skippedNoTimestamp).toBe(2);
   });
 });

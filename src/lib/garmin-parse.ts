@@ -128,3 +128,25 @@ export function dedupeById(raws: RawSummarizedActivity[]): RawSummarizedActivity
   }
   return out;
 }
+
+/**
+ * Parse multiple file bodies, dedupe across all of them by activityId,
+ * normalize each row, and report rows skipped for missing timestamps.
+ * Throws if any single file body is invalid JSON.
+ */
+export function parseFiles(fileBodies: string[]): ParseResult {
+  const allRaw: RawSummarizedActivity[] = [];
+  for (const body of fileBodies) {
+    allRaw.push(...parseSummarizedActivitiesJson(body));
+  }
+  const unique = dedupeById(allRaw);
+
+  let skippedNoTimestamp = 0;
+  const activities: Activity[] = [];
+  for (const raw of unique) {
+    const a = normalizeActivity(raw);
+    if (a) activities.push(a);
+    else skippedNoTimestamp++;
+  }
+  return { activities, skippedNoTimestamp };
+}
