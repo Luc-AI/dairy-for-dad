@@ -4,20 +4,15 @@
  *
  * Reads all 3 summarizedActivities JSON files from the Garmin export,
  * normalizes units, deduplicates by activityId, writes data/activities.json,
- * and bulk-upserts into Supabase Postgres.
+ * and bulk-upserts into the Neon Postgres database.
  *
  * Usage:
- *   SUPABASE_URL=https://xxx.supabase.co \
- *   SUPABASE_SERVICE_KEY=your-service-role-key \
- *   node scripts/parse-garmin.js
- *
- * The service role key (not anon key) is needed to bypass Row Level Security
- * during the initial seed. Get it from: Supabase > Settings > API > service_role.
+ *   DATABASE_URL=postgresql://... node scripts/parse-garmin.js
  */
 
 const fs = require('fs');
 const path = require('path');
-const { createClient } = require('@supabase/supabase-js');
+const { neon } = require('@neondatabase/serverless');
 
 // ---------------------------------------------------------------------------
 // Load .env.local automatically (no dotenv dependency needed)
@@ -48,12 +43,16 @@ const SOURCE_FILES = [
 
 const OUTPUT_FILE = path.join(__dirname, '../data/activities.json');
 
-// Support both explicit SUPABASE_URL and the Next.js NEXT_PUBLIC_SUPABASE_URL
-const SUPABASE_URL = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
-// Support SUPABASE_SERVICE_KEY or SUPABASE_SERVICE_ROLE_KEY
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
+const DATABASE_URL = process.env.DATABASE_URL;
 
 const CHUNK_SIZE = 500;
+
+const COLS = [
+  'id', 'date', 'name', 'activity_type', 'duration_sec', 'distance_m',
+  'elevation_gain_m', 'avg_speed_kmh', 'avg_hr', 'max_hr', 'calories',
+  'avg_power', 'tss', 'avg_temperature', 'min_temperature', 'max_temperature',
+  'start_lat', 'start_lon', 'location_name', 'description',
+];
 
 // ---------------------------------------------------------------------------
 // Unit conversion helpers
@@ -205,28 +204,43 @@ async function main() {
     console.warn('\nWARN: Spot-check activity (id: 178259890) not found.');
   }
 
-  // 6. Seed Supabase
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-    console.log('\nNo SUPABASE_URL / SUPABASE_SERVICE_KEY set — skipping DB seed.');
+  // 6. Seed Neon
+  if (!DATABASE_URL) {
+    console.log('\nNo DATABASE_URL set — skipping DB seed.');
     console.log('To seed, run:');
-    console.log(
-      '  SUPABASE_URL=https://xxx.supabase.co SUPABASE_SERVICE_KEY=your-key node scripts/parse-garmin.js'
-    );
+    console.log('  DATABASE_URL=postgresql://... node scripts/parse-garmin.js');
     return;
   }
 
-  console.log('\nSeeding Supabase...');
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+  console.log('\nSeeding Neon...');
+  const sql = neon(DATABASE_URL);
+
+  const updateSet = COLS.filter((c) => c !== 'id')
+    .map((c) => `${c} = EXCLUDED.${c}`)
+    .join(', ');
 
   let inserted = 0;
   for (let i = 0; i < normalized.length; i += CHUNK_SIZE) {
     const batch = normalized.slice(i, i + CHUNK_SIZE);
-    const { error } = await supabase
-      .from('activities')
-      .upsert(batch, { onConflict: 'id' });
+    const values = [];
+    const placeholders = batch
+      .map((row, rowIdx) => {
+        const base = rowIdx * COLS.length;
+        COLS.forEach((c) => values.push(row[c] ?? null));
+        return '(' + COLS.map((_, j) => `$${base + j + 1}`).join(',') + ')';
+      })
+      .join(',');
 
-    if (error) {
-      console.error(`  ERROR on chunk ${i / CHUNK_SIZE + 1}:`, error.message);
+    const query = `
+      INSERT INTO activities (${COLS.join(',')})
+      VALUES ${placeholders}
+      ON CONFLICT (id) DO UPDATE SET ${updateSet}
+    `;
+
+    try {
+      await sql.query(query, values);
+    } catch (err) {
+      console.error(`  ERROR on chunk ${i / CHUNK_SIZE + 1}:`, err.message);
       process.exit(1);
     }
 
@@ -234,7 +248,7 @@ async function main() {
     process.stdout.write(`  Upserted ${inserted}/${normalized.length}\r`);
   }
 
-  console.log(`\n\nSeeded ${inserted} activities into Supabase. Done!`);
+  console.log(`\n\nSeeded ${inserted} activities into Neon. Done!`);
 }
 
 main().catch((err) => {

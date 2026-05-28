@@ -1,50 +1,66 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import type { Activity } from '@/lib/supabase';
+import { cookies } from 'next/headers';
+import { sql } from '@/lib/db';
+import { SESSION_COOKIE, isValidSession } from '@/lib/auth';
+
+const SORTABLE = new Set([
+  'date', 'distance_m', 'elevation_gain_m', 'duration_sec',
+  'avg_hr', 'calories', 'avg_power', 'tss',
+  'avg_temperature', 'min_temperature', 'max_temperature',
+]);
 
 export async function GET(req: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(SESSION_COOKIE)?.value;
+  if (!(await isValidSession(token))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const { searchParams } = req.nextUrl;
 
   const search = searchParams.get('search') ?? '';
-  const sortBy = (searchParams.get('sortBy') ?? 'date') as keyof Activity;
-  const sortDir = searchParams.get('sortDir') === 'asc' ? true : false;
+  const sortByParam = searchParams.get('sortBy') ?? 'date';
+  const sortDirAsc = searchParams.get('sortDir') === 'asc';
   const dateFrom = searchParams.get('dateFrom') ?? '';
   const dateTo = searchParams.get('dateTo') ?? '';
 
-  const SORTABLE = [
-    'date', 'distance_m', 'elevation_gain_m', 'duration_sec',
-    'avg_hr', 'calories', 'avg_power', 'tss',
-    'avg_temperature', 'min_temperature', 'max_temperature',
-  ];
-  const column = SORTABLE.includes(sortBy as string) ? sortBy : 'date';
+  const column = SORTABLE.has(sortByParam) ? sortByParam : 'date';
+  const direction = sortDirAsc ? 'ASC' : 'DESC';
 
-  let query = supabase
-    .from('activities')
-    .select(
-      'id, date, name, activity_type, duration_sec, distance_m, elevation_gain_m, avg_speed_kmh, avg_hr, max_hr, calories, avg_power, tss, avg_temperature, min_temperature, max_temperature, location_name, description'
-    )
-    .order(column as string, { ascending: sortDir });
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
 
   if (search) {
-    query = query.or(
-      `name.ilike.%${search}%,location_name.ilike.%${search}%,activity_type.ilike.%${search}%,description.ilike.%${search}%`
+    params.push(`%${search}%`);
+    const p = `$${params.length}`;
+    conditions.push(
+      `(name ILIKE ${p} OR location_name ILIKE ${p} OR activity_type ILIKE ${p} OR description ILIKE ${p})`
     );
   }
-
-  if (dateFrom) query = query.gte('date', dateFrom);
-  if (dateTo) query = query.lte('date', dateTo);
-
-  const { data, error } = await query;
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (dateFrom) {
+    params.push(dateFrom);
+    conditions.push(`date >= $${params.length}`);
+  }
+  if (dateTo) {
+    params.push(dateTo);
+    conditions.push(`date <= $${params.length}`);
   }
 
-  return NextResponse.json(data);
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const query = `
+    SELECT id, date, name, activity_type, duration_sec, distance_m, elevation_gain_m,
+           avg_speed_kmh, avg_hr, max_hr, calories, avg_power, tss,
+           avg_temperature, min_temperature, max_temperature, location_name, description
+    FROM activities
+    ${where}
+    ORDER BY ${column} ${direction}
+  `;
+
+  try {
+    const rows = await sql.query(query, params);
+    return NextResponse.json(rows);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Query failed';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }

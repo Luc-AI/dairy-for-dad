@@ -1,4 +1,6 @@
-import { createClient } from '@supabase/supabase-js';
+import { neon, types } from '@neondatabase/serverless';
+
+types.setTypeParser(types.builtins.INT8, (val: string) => Number(val));
 
 export type Activity = {
   id: number;
@@ -30,7 +32,4 @@ export type DiaryEntry = {
   created_at: string;
 };
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-export const supabase = createClient(url, key);
+export const sql = neon(process.env.DATABASE_URL!);

@@ -1,9 +1,10 @@
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { cookies } from 'next/headers';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { SESSION_COOKIE, expectedSessionToken, verifyPassword } from '@/lib/auth';
 
 export default async function LoginPage({
   searchParams,
@@ -15,15 +16,21 @@ export default async function LoginPage({
   async function signIn(formData: FormData) {
     'use server';
 
-    const email = formData.get('email') as string;
     const password = formData.get('password') as string;
 
-    const supabase = await createClient();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-
-    if (error) {
-      redirect('/login?message=Invalid+email+or+password');
+    if (!(await verifyPassword(password))) {
+      redirect('/login?message=Invalid+password');
     }
+
+    const token = await expectedSessionToken();
+    const cookieStore = await cookies();
+    cookieStore.set(SESSION_COOKIE, token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 30,
+    });
 
     redirect('/');
   }
@@ -46,17 +53,6 @@ export default async function LoginPage({
           <CardContent>
             <form action={signIn} className="space-y-4">
               <div className="space-y-1.5">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  name="email"
-                  type="email"
-                  required
-                  autoComplete="email"
-                />
-              </div>
-
-              <div className="space-y-1.5">
                 <Label htmlFor="password">Password</Label>
                 <Input
                   id="password"
@@ -64,6 +60,7 @@ export default async function LoginPage({
                   type="password"
                   required
                   autoComplete="current-password"
+                  autoFocus
                 />
               </div>
 
