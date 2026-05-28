@@ -4,9 +4,11 @@
 
 **Goal:** Let an authenticated user update the activities database by uploading one or more Garmin `*_summarizedActivities.json` files through a modal on the main page; new activities are inserted, existing ones are skipped.
 
-**Architecture:** Pure-TS parser shared between the existing CLI seed script and a new browser-based import modal. Browser parses + dedupes + normalizes the JSON files locally, fetches existing activity IDs from a new `/api/activities/ids` endpoint, previews how many are new, then POSTs only the new rows to `/api/activities/import` which inserts them with `ON CONFLICT DO NOTHING`.
+**Architecture:** Pure-TS parser shared between the existing CLI seed script and a new browser-based import modal. Browser parses + dedupes + normalizes the JSON files locally, fetches existing activity IDs from a new `/api/activities/ids` endpoint, previews how many are new, then POSTs only the new rows to `/api/activities/import` which inserts them with `ON CONFLICT (id) DO NOTHING RETURNING id`.
 
-**Tech Stack:** Next.js 16 (App Router), React 19, TypeScript, Supabase (`@supabase/ssr`), shadcn/ui (new-york style, Tailwind v4), Vitest (added by this plan), tsx (added by this plan), sonner (added by this plan).
+**Tech Stack:** Next.js 16 (App Router), React 19, TypeScript, **Neon Postgres** (`@neondatabase/serverless`), **shared-password HMAC session cookie** (`src/lib/auth.ts`), shadcn/ui (new-york style, Tailwind v4), Vitest (added by this plan), tsx (added by this plan), sonner (added by this plan).
+
+> **Migration note (2026-05-28):** This plan was originally drafted against Supabase. The project has since migrated to Neon. Below is the Neon-correct version: the `Activity` type comes from `@/lib/db`, auth uses `isValidSession(cookies.get(SESSION_COOKIE)?.value)`, and inserts/queries use raw SQL via the `sql` client. The shape of the spec and the task decomposition are unchanged.
 
 **Design spec:** [docs/superpowers/specs/2026-05-28-garmin-upload-design.md](../specs/2026-05-28-garmin-upload-design.md)
 
@@ -32,7 +34,7 @@
 
 | Path | Change |
 |---|---|
-| `scripts/parse-garmin.js` → `scripts/parse-garmin.ts` | Convert to TypeScript; replace inline normalize/dedup with imports from `src/lib/garmin-parse.ts`. Run via `tsx`. |
+| `scripts/parse-garmin.js` → `scripts/parse-garmin.ts` | Convert to TypeScript; replace inline normalize/dedup with imports from `src/lib/garmin-parse.ts`. Run via `tsx`. Continues to use `neon(process.env.DATABASE_URL)` directly. |
 | `package.json` | Add `tsx`, `vitest`, `sonner` deps. Add `test` and `parse-garmin` scripts. |
 | `src/app/page.tsx` | Mount `<ImportActivitiesButton />` in the header row next to `<LogoutButton />`. Mount `<Toaster />` once for sonner. |
 | `src/app/components/ActivityTable.tsx` | Listen for a `window` `'activities:imported'` event and re-call `fetchActivities` when it fires. |
@@ -42,9 +44,19 @@
 ## Conventions used in this plan
 
 - **Path aliases:** `@/lib/...`, `@/components/...` — already configured in `tsconfig.json` and `components.json`.
-- **Activity type:** the canonical `Activity` type lives in `src/lib/supabase.ts`. New code imports from there.
-- **Auth pattern in API routes:** `const supabase = await createClient(); const { data: { user } } = await supabase.auth.getUser(); if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });` — matches `src/app/api/activities/route.ts`.
-- **Client supabase usage:** none. The modal talks to the server only via `fetch('/api/...')`, which carries the SSR auth cookie automatically.
+- **Activity type:** the canonical `Activity` type lives in `src/lib/db.ts`. New code imports from there: `import type { Activity } from '@/lib/db';`.
+- **DB client (server):** `import { sql } from '@/lib/db';` — `@neondatabase/serverless` tagged template + `sql.query(text, params)`.
+- **Auth pattern in API routes (Neon stack):**
+  ```ts
+  import { cookies } from 'next/headers';
+  import { SESSION_COOKIE, isValidSession } from '@/lib/auth';
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  if (!(await isValidSession(token))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  ```
+  Mirrors what `src/app/api/activities/route.ts` already does.
+- **Client usage:** none of the new client code talks to the DB directly. The modal hits `fetch('/api/...')`, which carries the session cookie automatically.
 - **Commit style:** present-tense conventional commits matching recent history (`feat:`, `fix:`, `refactor:`, `chore:`, `test:`).
 
 ---
@@ -97,7 +109,7 @@ export default defineConfig({
 
 Create `src/lib/garmin-parse.ts`:
 ```ts
-import type { Activity } from './supabase';
+import type { Activity } from './db';
 
 /** Raw Garmin "summarized activity" record. Only the fields we use are typed. */
 export type RawSummarizedActivity = {
@@ -335,8 +347,6 @@ Expected: 3 new tests FAIL with "normalizeActivity is not a function" or similar
 
 Append to `src/lib/garmin-parse.ts`:
 ```ts
-import type { Activity } from './supabase';
-
 /** Normalize a raw Garmin record into our `Activity` row shape. Returns null if no usable date. */
 export function normalizeActivity(raw: RawSummarizedActivity): Activity | null {
   const date = msToDate(raw.beginTimestamp);
@@ -367,7 +377,7 @@ export function normalizeActivity(raw: RawSummarizedActivity): Activity | null {
 }
 ```
 
-> Note: the duplicate `import type { Activity }` at the top of the file is fine — TypeScript dedupes. If your editor complains, just remove the redundant one.
+> Note: `Activity` is already imported at the top of `garmin-parse.ts` (Task 1) so no additional import is needed here.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -563,7 +573,7 @@ export function parseFiles(fileBodies: string[]): ParseResult {
   const unique = dedupeById(allRaw);
 
   let skippedNoTimestamp = 0;
-  const activities: Activity[] = [];
+  const activities: Activity[] = []; // Activity already imported at top of file
   for (const raw of unique) {
     const a = normalizeActivity(raw);
     if (a) activities.push(a);
@@ -595,7 +605,7 @@ git commit -m "feat: add parseFiles orchestrator for Garmin parser"
 
 - [ ] **Step 1: Read the existing script** (already done — use the design spec for reference)
 
-The script does six things: load `.env.local`, read 3 known files, dedupe, normalize, write `data/activities.json`, upsert to Supabase. After this refactor it does the same six things, but uses the shared parser.
+The script does six things: load `.env.local`, read 3 known files, dedupe, normalize, write `data/activities.json`, upsert (overwrite-on-conflict) to Neon. After this refactor it does the same six things, but uses the shared parser.
 
 - [ ] **Step 2: Create `scripts/parse-garmin.ts`**
 
@@ -607,7 +617,7 @@ Create `scripts/parse-garmin.ts`:
  *
  * Reads the 3 summarizedActivities JSON files from the Garmin export,
  * normalizes via src/lib/garmin-parse.ts, writes data/activities.json,
- * and bulk-upserts (overwrite) into Supabase Postgres.
+ * and bulk-upserts (overwrite-on-conflict) into Neon Postgres.
  *
  * Usage: npm run parse-garmin
  */
@@ -615,8 +625,9 @@ Create `scripts/parse-garmin.ts`:
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createClient } from '@supabase/supabase-js';
+import { neon } from '@neondatabase/serverless';
 import { parseFiles } from '../src/lib/garmin-parse';
+import type { Activity } from '../src/lib/db';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -637,9 +648,15 @@ const SOURCE_FILES = [
 ];
 const OUTPUT_FILE = path.join(__dirname, '../data/activities.json');
 
-const SUPABASE_URL = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
+const DATABASE_URL = process.env.DATABASE_URL;
 const CHUNK_SIZE = 500;
+
+const COLS: (keyof Activity)[] = [
+  'id', 'date', 'name', 'activity_type', 'duration_sec', 'distance_m',
+  'elevation_gain_m', 'avg_speed_kmh', 'avg_hr', 'max_hr', 'calories',
+  'avg_power', 'tss', 'avg_temperature', 'min_temperature', 'max_temperature',
+  'start_lat', 'start_lon', 'location_name', 'description',
+];
 
 async function main(): Promise<void> {
   console.log('=== Garmin Activity Parser ===\n');
@@ -678,25 +695,47 @@ async function main(): Promise<void> {
     console.log(`  duration_sec: ${prag.duration_sec} (expected: ~2945)`);
   }
 
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-    console.log('\nNo SUPABASE_URL / SUPABASE_SERVICE_KEY set — skipping DB seed.');
+  if (!DATABASE_URL) {
+    console.log('\nNo DATABASE_URL set — skipping DB seed.');
     return;
   }
 
-  console.log('\nSeeding Supabase...');
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+  console.log('\nSeeding Neon...');
+  const sql = neon(DATABASE_URL);
+
+  const updateSet = COLS.filter((c) => c !== 'id')
+    .map((c) => `${c} = EXCLUDED.${c}`)
+    .join(', ');
+
   let inserted = 0;
   for (let i = 0; i < activities.length; i += CHUNK_SIZE) {
     const batch = activities.slice(i, i + CHUNK_SIZE);
-    const { error } = await supabase.from('activities').upsert(batch, { onConflict: 'id' });
-    if (error) {
-      console.error(`  ERROR on chunk ${i / CHUNK_SIZE + 1}:`, error.message);
+    const values: unknown[] = [];
+    const placeholders = batch
+      .map((row, rowIdx) => {
+        const base = rowIdx * COLS.length;
+        COLS.forEach((c) => values.push(row[c] ?? null));
+        return '(' + COLS.map((_, j) => `$${base + j + 1}`).join(',') + ')';
+      })
+      .join(',');
+
+    const query = `
+      INSERT INTO activities (${COLS.join(',')})
+      VALUES ${placeholders}
+      ON CONFLICT (id) DO UPDATE SET ${updateSet}
+    `;
+
+    try {
+      await sql.query(query, values);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`  ERROR on chunk ${i / CHUNK_SIZE + 1}:`, msg);
       process.exit(1);
     }
     inserted += batch.length;
     process.stdout.write(`  Upserted ${inserted}/${activities.length}\r`);
   }
-  console.log(`\n\nSeeded ${inserted} activities into Supabase. Done!`);
+  console.log(`\n\nSeeded ${inserted} activities into Neon. Done!`);
 }
 
 main().catch((err) => {
@@ -705,7 +744,7 @@ main().catch((err) => {
 });
 ```
 
-> Note on the CLI script's conflict behavior: it stays as **upsert (overwrite)** because that's the seed-from-scratch workflow. The new upload feature is the one that uses **skip-on-conflict**. Different surfaces, different semantics — intentional.
+> Note on the CLI script's conflict behavior: it stays as **upsert (overwrite-on-conflict)** because that's the seed-from-scratch workflow. The new upload feature uses **skip-on-conflict**. Different surfaces, different intentional semantics.
 
 - [ ] **Step 3: Delete the old `.js` script**
 
@@ -717,7 +756,7 @@ git rm scripts/parse-garmin.js
 - [ ] **Step 4: Verify the script still runs**
 
 Run: `npm run parse-garmin`
-Expected: same output as before — reads 3 files, writes `data/activities.json`, prints the Prag spot-check. If no Supabase env vars are set, exits cleanly after the local write.
+Expected: same output as before — reads 3 files, writes `data/activities.json`, prints the Prag spot-check. If no `DATABASE_URL` env var is set, exits cleanly after the local write.
 
 - [ ] **Step 5: Commit**
 
@@ -738,25 +777,23 @@ git commit -m "refactor: convert parse-garmin script to TypeScript using shared 
 Create `src/app/api/activities/ids/route.ts`:
 ```ts
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { cookies } from 'next/headers';
+import { sql } from '@/lib/db';
+import { SESSION_COOKIE, isValidSession } from '@/lib/auth';
 
 export async function GET() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  if (!(await isValidSession(token))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { data, error } = await supabase
-    .from('activities')
-    .select('id');
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  try {
+    const rows = (await sql`SELECT id FROM activities`) as { id: number }[];
+    return NextResponse.json(rows.map((r) => r.id));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Query failed';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  const ids = (data ?? []).map((row: { id: number }) => row.id);
-  return NextResponse.json(ids);
 }
 ```
 
@@ -773,9 +810,9 @@ curl -i http://localhost:3000/api/activities/ids | head -5
 ```
 Expected: `HTTP/1.1 401` followed by `{"error":"Unauthorized"}`.
 
-Then log in via the browser, copy the supabase auth cookie from devtools, and:
+Then log in via the browser, copy the `app_session` cookie value from devtools (Application → Cookies → localhost), and:
 ```bash
-curl -s -H "Cookie: <paste cookies here>" http://localhost:3000/api/activities/ids | head -c 200
+curl -s -H "Cookie: app_session=<paste value>" http://localhost:3000/api/activities/ids | head -c 200
 ```
 Expected: a JSON array of numbers (the existing activity IDs).
 
@@ -798,10 +835,19 @@ git commit -m "feat: add GET /api/activities/ids endpoint"
 Create `src/app/api/activities/import/route.ts`:
 ```ts
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import type { Activity } from '@/lib/supabase';
+import { cookies } from 'next/headers';
+import { sql } from '@/lib/db';
+import { SESSION_COOKIE, isValidSession } from '@/lib/auth';
+import type { Activity } from '@/lib/db';
 
 const CHUNK_SIZE = 500;
+
+const COLS: (keyof Activity)[] = [
+  'id', 'date', 'name', 'activity_type', 'duration_sec', 'distance_m',
+  'elevation_gain_m', 'avg_speed_kmh', 'avg_hr', 'max_hr', 'calories',
+  'avg_power', 'tss', 'avg_temperature', 'min_temperature', 'max_temperature',
+  'start_lat', 'start_lon', 'location_name', 'description',
+];
 
 function isActivityShape(x: unknown): x is Activity {
   if (!x || typeof x !== 'object') return false;
@@ -810,9 +856,8 @@ function isActivityShape(x: unknown): x is Activity {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  if (!(await isValidSession(token))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -834,19 +879,29 @@ export async function POST(req: NextRequest) {
   let inserted = 0;
   for (let i = 0; i < activities.length; i += CHUNK_SIZE) {
     const batch = activities.slice(i, i + CHUNK_SIZE);
-    const { error, count } = await supabase
-      .from('activities')
-      .upsert(batch, { onConflict: 'id', ignoreDuplicates: true, count: 'exact' });
+    const values: unknown[] = [];
+    const placeholders = batch
+      .map((row, rowIdx) => {
+        const base = rowIdx * COLS.length;
+        COLS.forEach((c) => values.push(row[c] ?? null));
+        return '(' + COLS.map((_, j) => `$${base + j + 1}`).join(',') + ')';
+      })
+      .join(',');
 
-    if (error) {
-      return NextResponse.json(
-        { error: error.message, inserted },
-        { status: 500 }
-      );
+    const query = `
+      INSERT INTO activities (${COLS.join(',')})
+      VALUES ${placeholders}
+      ON CONFLICT (id) DO NOTHING
+      RETURNING id
+    `;
+
+    try {
+      const result = (await sql.query(query, values)) as { id: number }[];
+      inserted += result.length;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Insert failed';
+      return NextResponse.json({ error: message, inserted }, { status: 500 });
     }
-    // Supabase returns `count` as the number of rows actually inserted when
-    // ignoreDuplicates is true. Fall back to batch length if not provided.
-    inserted += count ?? batch.length;
   }
 
   return NextResponse.json({
@@ -856,7 +911,10 @@ export async function POST(req: NextRequest) {
 }
 ```
 
-> Note: with `ignoreDuplicates: true`, Supabase translates to `INSERT ... ON CONFLICT DO NOTHING`. The `count: 'exact'` option asks Postgres to return the row-count actually inserted; if the client/library version doesn't populate it, we fall back to assuming the whole batch went in (a reasonable optimistic count — the client-side preview already filters duplicates, so collisions should be near-zero).
+> Notes:
+> - `RETURNING id` makes Postgres return one row per *actually inserted* id, so `result.length` is the truthful insert count even when conflicts cause silent skips.
+> - Chunk math: 20 columns × 500 rows = 10000 bound params per statement, well under Postgres's 65535 limit.
+> - `COLS` order must stay in sync with the column list in the script (Task 6) and in the `INSERT INTO activities (...)` clause here. They're the columns of the `activities` table from [neon-schema.sql](../../neon-schema.sql).
 
 - [ ] **Step 2: Sanity-check via curl**
 
@@ -873,7 +931,7 @@ Expected: `HTTP/1.1 401`.
 # 400 bad shape (auth'd)
 curl -i -X POST http://localhost:3000/api/activities/import \
   -H "Content-Type: application/json" \
-  -H "Cookie: <auth cookies>" \
+  -H "Cookie: app_session=<paste value>" \
   -d '{"activities":[{"id":"oops"}]}' | head -5
 ```
 Expected: `HTTP/1.1 400`.
@@ -882,7 +940,7 @@ Expected: `HTTP/1.1 400`.
 # 200 empty insert (auth'd)
 curl -s -X POST http://localhost:3000/api/activities/import \
   -H "Content-Type: application/json" \
-  -H "Cookie: <auth cookies>" \
+  -H "Cookie: app_session=<paste value>" \
   -d '{"activities":[]}'
 ```
 Expected: `{"inserted":0,"skipped":0}`.
@@ -968,7 +1026,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { parseFiles } from '@/lib/garmin-parse';
-import type { Activity } from '@/lib/supabase';
+import type { Activity } from '@/lib/db';
 
 type Props = {
   open: boolean;
@@ -1335,7 +1393,7 @@ useEffect(() => {
 
 Run: `npm run dev`. Log in. Open the modal, drop your existing 3 export files. The preview should say "0 new". Close the modal.
 
-Then, in Supabase SQL Editor (or `psql`), delete one row:
+Then, in the Neon SQL Editor (or `psql $DATABASE_URL`), delete one row:
 ```sql
 DELETE FROM activities WHERE id = <some-id-you-pick>;
 ```
@@ -1376,7 +1434,7 @@ npm run build      # production build should succeed with no errors
 - Click Import.
 - Drop the 3 existing `*_summarizedActivities.json` files. Preview should say something like "Found ~N activities across 3 files. 0 new, ~N already in your database." Import button should be hidden.
 - Close.
-- Delete a row from `activities` in Supabase.
+- Delete a row from `activities` in Neon.
 - Re-open Import, drop the same 3 files. Preview should show "1 new". Click Import. Toast: "Imported 1 new activity." Modal closes. The table includes the row again.
 
 - [ ] **Step 4: Error path checks**
@@ -1394,5 +1452,7 @@ This task records the manual checks; no code change.
 
 - **Spec coverage:** every section of the spec maps to a task — parser (1-5), CLI refactor (6), ids endpoint (7), import endpoint (8), UI (9-11), refresh (12), manual tests (13). ✓
 - **Placeholders:** none — every step has either exact code or an exact command. ✓
-- **Type consistency:** the `Activity` type is imported from `@/lib/supabase` everywhere. `parseFiles` and `normalizeActivity` return that exact type. The `/api/activities/import` route validates the same shape it receives. ✓
+- **Type consistency:** the `Activity` type is imported from `@/lib/db` everywhere (browser, server, script). `parseFiles` and `normalizeActivity` return that exact type. The `/api/activities/import` route validates the same shape it receives. ✓
 - **Event name consistency:** `'activities:imported'` is used in both the dialog dispatcher (Task 10) and the table listener (Task 12). ✓
+- **Neon SQL consistency:** column list (`COLS`) is identical in Task 6 (script) and Task 8 (import endpoint), in the order matching `neon-schema.sql`. ✓
+- **Auth consistency:** both new API routes use the exact pattern from the existing `src/app/api/activities/route.ts` — `isValidSession(cookies.get(SESSION_COOKIE)?.value)`. ✓

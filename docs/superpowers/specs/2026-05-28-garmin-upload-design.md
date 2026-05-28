@@ -2,6 +2,7 @@
 
 **Date:** 2026-05-28
 **Status:** Approved for planning
+**Tech stack note (2026-05-28):** This spec was originally written against the Supabase stack; the project has since migrated to Neon Postgres (`@neondatabase/serverless`) with a shared-password HMAC session cookie ([src/lib/auth.ts](../../src/lib/auth.ts)). The architecture below still holds; only the *implementation primitives* shift — see the **Server-side primitives** section at the bottom.
 
 ## Goal
 
@@ -171,3 +172,30 @@ After successful import, close modal, toast `Imported N new activities.`, trigge
 - Whether to add `vitest` or skip the unit tests for now.
 
 These are all small wiring decisions and won't change the design.
+
+## Server-side primitives (Neon)
+
+The architecture is unchanged; only the database client and auth check change.
+
+- **DB client:** `import { sql } from '@/lib/db';` — a tagged-template / `sql.query(text, params)` function from `@neondatabase/serverless`. No ORM, no `.upsert()`.
+- **Auth check:**
+  ```ts
+  import { cookies } from 'next/headers';
+  import { SESSION_COOKIE, isValidSession } from '@/lib/auth';
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  if (!(await isValidSession(token))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  ```
+  This matches the pattern already used in [src/app/api/activities/route.ts](../../src/app/api/activities/route.ts).
+- **Activity type:** `import type { Activity } from '@/lib/db';` (not `@/lib/supabase` — that file no longer exists).
+- **Existing IDs query:** `SELECT id FROM activities` returning `{ id: number }[]`.
+- **Skip-on-conflict insert:** raw SQL parameterized batch insert, e.g.
+  ```sql
+  INSERT INTO activities (id, date, name, ...)
+  VALUES ($1, $2, $3, ...), ($21, $22, $23, ...), ...
+  ON CONFLICT (id) DO NOTHING
+  RETURNING id
+  ```
+  The number of rows in the result equals the number actually inserted. Chunk by 500 rows to keep the parameter count manageable (Postgres limit is 65535 parameters per statement; 20 columns × 500 rows = 10000, well under).
+- **Seed script (`scripts/parse-garmin.js`):** continues to use `neon(process.env.DATABASE_URL)` directly with `ON CONFLICT (id) DO UPDATE` (overwrite — the seed semantics). The new upload feature is the one with skip-on-conflict; different surfaces, different intent.
