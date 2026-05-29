@@ -1,6 +1,8 @@
 'use client';
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import type { Activity } from '@/lib/db';
 import { X, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -11,7 +13,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
-import ActivityStats from './ActivityStats';
+import ActivityStats, { DiaryNote } from './ActivityStats';
 
 // ---------------------------------------------------------------------------
 // Format helpers
@@ -87,6 +89,29 @@ interface SortState {
 }
 
 // ---------------------------------------------------------------------------
+// Detail link helper
+// ---------------------------------------------------------------------------
+
+function buildDetailHref(
+  id: number,
+  sort: SortState,
+  search: string,
+  dateFrom: string,
+  dateTo: string
+): string {
+  const params = new URLSearchParams();
+  if (sort.key !== 'date' || sort.dir !== 'desc') {
+    params.set('sort', String(sort.key));
+    params.set('dir', sort.dir);
+  }
+  if (search) params.set('search', search);
+  if (dateFrom) params.set('from', dateFrom);
+  if (dateTo) params.set('to', dateTo);
+  const qs = params.toString();
+  return qs ? `/activity/${id}?${qs}` : `/activity/${id}`;
+}
+
+// ---------------------------------------------------------------------------
 // Column config types
 // ---------------------------------------------------------------------------
 
@@ -132,8 +157,8 @@ interface PersistedColumnState {
 
 const COLUMN_DEFS: ColumnDef[] = [
   { id: 'date',             label: 'Date',      sortKey: 'date',             align: 'left',  defaultWidth: 100, minWidth: 70  },
-  { id: 'name',             label: 'Name',      sortKey: 'name',             align: 'left',  defaultWidth: 360, minWidth: 80  },
-  { id: 'activity_type',    label: 'Type',      sortKey: null,               align: 'left',  defaultWidth: 66,  minWidth: 60  },
+  { id: 'name',             label: 'Name',      sortKey: 'name',             align: 'left',  defaultWidth: 440, minWidth: 80  },
+  { id: 'activity_type',    label: 'Type',      sortKey: null,               align: 'left',  defaultWidth: 90,  minWidth: 60  },
   { id: 'distance_m',       label: 'Distance',  sortKey: 'distance_m',       align: 'right', defaultWidth: 90,  minWidth: 60  },
   { id: 'elevation_gain_m', label: 'Elevation', sortKey: 'elevation_gain_m', align: 'right', defaultWidth: 90,  minWidth: 60  },
   { id: 'duration_sec',     label: 'Duration',  sortKey: 'duration_sec',     align: 'right', defaultWidth: 90,  minWidth: 60  },
@@ -145,7 +170,7 @@ const COLUMN_DEFS: ColumnDef[] = [
   { id: 'location_name',    label: 'Location',  sortKey: null,               align: 'left',  defaultWidth: 140, minWidth: 60  },
 ];
 
-const LS_KEY = 'activity-table-columns-v3';
+const LS_KEY = 'activity-table-columns-v5';
 
 // ---------------------------------------------------------------------------
 // localStorage helpers
@@ -170,7 +195,10 @@ function loadColumnConfigs(): ColumnConfig[] {
     const saved = new Map(parsed.columns.map((c) => [c.id, c]));
     return COLUMN_DEFS.map((def, i) => {
       const stored = saved.get(def.id);
-      return stored ?? { id: def.id, visible: def.defaultVisible ?? true, width: def.defaultWidth, order: i };
+      if (!stored) return { id: def.id, visible: def.defaultVisible ?? true, width: def.defaultWidth, order: i };
+      // Width is always taken from the static defaults so code changes to
+      // COLUMN_DEFS take effect even when older state is persisted.
+      return { ...stored, width: def.defaultWidth };
     }).sort((a, b) => a.order - b.order);
   } catch {
     return defaultColumnConfigs();
@@ -233,9 +261,11 @@ function SummaryStats({ activities }: { activities: Activity[] }) {
 function ActivitySidePanel({
   activity,
   onClose,
+  openHref,
 }: {
   activity: Activity;
   onClose: () => void;
+  openHref: string;
 }) {
   return (
     <Card className="flex flex-col overflow-hidden h-full rounded-none border-0 border-l">
@@ -249,15 +279,23 @@ function ActivitySidePanel({
               >
                 {activity.name || '—'}
               </h2>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 shrink-0 text-muted-foreground"
-                onClick={onClose}
-                aria-label="Close"
-              >
-                <X className="h-3.5 w-3.5" />
-              </Button>
+              <div className="flex items-center gap-1 shrink-0">
+                <Link
+                  href={openHref}
+                  className="text-xs px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                >
+                  Open
+                </Link>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground"
+                  onClick={onClose}
+                  aria-label="Close"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <Badge className={cn('rounded-full text-[11px] font-medium', activityBadgeClass(activity.activity_type))}>
@@ -266,6 +304,7 @@ function ActivitySidePanel({
               <span className="text-xs font-mono text-muted-foreground">{fmtDate(activity.date)}</span>
             </div>
           </div>
+          {activity.description && <DiaryNote description={activity.description} />}
           <Separator />
           <ActivityStats activity={activity} />
         </div>
@@ -369,7 +408,10 @@ function MobilePanel({
         <Separator />
         <div className="px-4 py-4">
           {activity ? (
-            <ActivityStats activity={activity} />
+            <div className="flex flex-col gap-5">
+              {activity.description && <DiaryNote description={activity.description} />}
+              <ActivityStats activity={activity} />
+            </div>
           ) : (
             <SummaryStats activities={selectedActivities} />
           )}
@@ -383,14 +425,28 @@ function MobilePanel({
 // Cell renderer (module-scope so it never re-creates)
 // ---------------------------------------------------------------------------
 
-function renderCell(a: Activity, colId: ColumnId, isSelected: boolean): React.ReactNode {
+function renderCell(
+  a: Activity,
+  colId: ColumnId,
+  isSelected: boolean,
+  sort: SortState,
+  search: string,
+  dateFrom: string,
+  dateTo: string,
+): React.ReactNode {
   switch (colId) {
     case 'date':
       return <span className="font-mono text-foreground">{fmtDate(a.date)}</span>;
     case 'name':
       return (
         <span className="inline-flex items-center gap-1.5 truncate">
-          {a.name || <span className="text-muted-foreground">—</span>}
+          <Link
+            href={buildDetailHref(a.id, sort, search, dateFrom, dateTo)}
+            className="hover:underline truncate"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {a.name || <span className="text-muted-foreground">—</span>}
+          </Link>
           {!!a.description && (
             <Badge
               variant="outline"
@@ -406,7 +462,7 @@ function renderCell(a: Activity, colId: ColumnId, isSelected: boolean): React.Re
       );
     case 'activity_type':
       return (
-        <Badge className={cn('rounded-full text-[11px] font-medium', activityBadgeClass(a.activity_type))}>
+        <Badge className={cn('rounded-full text-[11px] font-medium max-w-full truncate block', activityBadgeClass(a.activity_type))}>
           {fmtActivity(a.activity_type)}
         </Badge>
       );
@@ -441,6 +497,10 @@ interface ActivityRowProps {
   isSelected: boolean;
   isFocused: boolean;
   visibleColumns: ColumnDef[];
+  sort: SortState;
+  search: string;
+  dateFrom: string;
+  dateTo: string;
   onRowClick: (id: number, rowIdx: number) => void;
   onToggleCheck: (id: number, rowIdx: number) => void;
 }
@@ -451,6 +511,10 @@ const ActivityRow = memo(function ActivityRow({
   isSelected,
   isFocused,
   visibleColumns,
+  sort,
+  search,
+  dateFrom,
+  dateTo,
   onRowClick,
   onToggleCheck,
 }: ActivityRowProps) {
@@ -498,7 +562,7 @@ const ActivityRow = memo(function ActivityRow({
                 : undefined
           }
         >
-          {renderCell(activity, col.id, isSelected)}
+          {renderCell(activity, col.id, isSelected, sort, search, dateFrom, dateTo)}
         </td>
       ))}
     </tr>
@@ -510,6 +574,7 @@ const ActivityRow = memo(function ActivityRow({
 // ---------------------------------------------------------------------------
 
 export default function ActivityTable() {
+  const router = useRouter();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -666,6 +731,12 @@ export default function ActivityTable() {
   // ---------------------------------------------------------------------------
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key === 'Enter' && focusedIndex !== null && activities[focusedIndex]) {
+      e.preventDefault();
+      const target = activities[focusedIndex];
+      router.push(buildDetailHref(target.id, sort, search, dateFrom, dateTo));
+      return;
+    }
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     if (activities.length === 0) return;
     e.preventDefault();
@@ -831,7 +902,7 @@ export default function ActivityTable() {
       <div className="flex rounded-xl border border-border overflow-hidden bg-card shadow-sm">
         {/* Table */}
         <div className="flex-1 min-w-0 overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
-          <table ref={tableRef} className="min-w-full divide-y divide-border text-sm table-fixed">
+          <table ref={tableRef} className="divide-y divide-border text-sm table-fixed">
             <colgroup>
               <col style={{ width: 36 }} />
               {visibleColumns.map((col) => {
@@ -898,6 +969,10 @@ export default function ActivityTable() {
                     isSelected={selectedIds.has(a.id)}
                     isFocused={focusedIndex === rowIdx}
                     visibleColumns={visibleColumns}
+                    sort={sort}
+                    search={search}
+                    dateFrom={dateFrom}
+                    dateTo={dateTo}
                     onRowClick={onRowClick}
                     onToggleCheck={onToggleCheck}
                   />
@@ -917,6 +992,7 @@ export default function ActivityTable() {
           {selectedIds.size === 1 && selectedActivities[0] ? (
             <ActivitySidePanel
               activity={selectedActivities[0]}
+              openHref={buildDetailHref(selectedActivities[0].id, sort, search, dateFrom, dateTo)}
               onClose={() => {
                 setSelectedIds(new Set());
                 setFocusedIndex(null);

@@ -73,17 +73,20 @@ export default function ActivityStats({
           <p className="text-sm text-foreground">{activity.location_name}</p>
         </div>
       )}
+    </div>
+  );
+}
 
-      {activity.description && (
-        <div>
-          <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground leading-none mb-1.5">
-            Diary Note
-          </p>
-          <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed border-l-4 border-amber-300 pl-3">
-            {activity.description}
-          </p>
-        </div>
-      )}
+export function DiaryNote({ description }: { description: string | null }) {
+  if (!description) return null;
+  return (
+    <div>
+      <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground leading-none mb-1.5">
+        Diary Note
+      </p>
+      <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed border-l-4 border-amber-300 pl-3">
+        {description}
+      </p>
     </div>
   );
 }
