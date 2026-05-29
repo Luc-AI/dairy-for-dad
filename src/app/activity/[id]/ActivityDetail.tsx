@@ -161,33 +161,37 @@ export default function ActivityDetail({ activity }: { activity: Activity }) {
     [orderedIds, activity.id]
   );
 
-  const goPrev = () => {
-    if (neighbors.prev !== null) router.push(detailHref(neighbors.prev, searchParams));
-  };
-  const goNext = () => {
-    if (neighbors.next !== null) router.push(detailHref(neighbors.next, searchParams));
-  };
+  const goPrev = useCallback(async () => {
+    if (neighbors.prev === null) return;
+    await flushSave();
+    router.push(detailHref(neighbors.prev, searchParams));
+  }, [neighbors.prev, flushSave, router, searchParams]);
+
+  const goNext = useCallback(async () => {
+    if (neighbors.next === null) return;
+    await flushSave();
+    router.push(detailHref(neighbors.next, searchParams));
+  }, [neighbors.next, flushSave, router, searchParams]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
-        goPrev();
+        void goPrev();
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
-        goNext();
+        void goNext();
       } else if (e.key === 'Escape') {
-        router.push('/');
+        void flushSave().then(() => router.push('/'));
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [neighbors.prev, neighbors.next]);
+  }, [goPrev, goNext, flushSave, router]);
 
-  const prevDisabled = neighbors.prev === null;
-  const nextDisabled = neighbors.next === null;
+  const prevDisabled = neighbors.prev === null || saveState === 'saving';
+  const nextDisabled = neighbors.next === null || saveState === 'saving';
 
   return (
     <main className="min-h-screen bg-background px-4 py-6">
@@ -202,7 +206,7 @@ export default function ActivityDetail({ activity }: { activity: Activity }) {
                 variant="outline"
                 size="sm"
                 disabled={prevDisabled}
-                onClick={goPrev}
+                onClick={() => void goPrev()}
                 title={neighborsError ? 'Could not load list context' : prevDisabled ? 'No earlier activity' : 'Previous (←)'}
               >
                 ◀ Prev
@@ -211,7 +215,7 @@ export default function ActivityDetail({ activity }: { activity: Activity }) {
                 variant="outline"
                 size="sm"
                 disabled={nextDisabled}
-                onClick={goNext}
+                onClick={() => void goNext()}
                 title={neighborsError ? 'Could not load list context' : nextDisabled ? 'No later activity' : 'Next (→)'}
               >
                 Next ▶
