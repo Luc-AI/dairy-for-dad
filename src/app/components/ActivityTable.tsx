@@ -1,6 +1,8 @@
 'use client';
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import type { Activity } from '@/lib/db';
 import { X, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -84,6 +86,29 @@ type SortDir = 'asc' | 'desc';
 interface SortState {
   key: SortKey;
   dir: SortDir;
+}
+
+// ---------------------------------------------------------------------------
+// Detail link helper
+// ---------------------------------------------------------------------------
+
+function buildDetailHref(
+  id: number,
+  sort: SortState,
+  search: string,
+  dateFrom: string,
+  dateTo: string
+): string {
+  const params = new URLSearchParams();
+  if (sort.key !== 'date' || sort.dir !== 'desc') {
+    params.set('sort', String(sort.key));
+    params.set('dir', sort.dir);
+  }
+  if (search) params.set('search', search);
+  if (dateFrom) params.set('from', dateFrom);
+  if (dateTo) params.set('to', dateTo);
+  const qs = params.toString();
+  return qs ? `/activity/${id}?${qs}` : `/activity/${id}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -233,9 +258,11 @@ function SummaryStats({ activities }: { activities: Activity[] }) {
 function ActivitySidePanel({
   activity,
   onClose,
+  openHref,
 }: {
   activity: Activity;
   onClose: () => void;
+  openHref: string;
 }) {
   return (
     <Card className="flex flex-col overflow-hidden h-full rounded-none border-0 border-l">
@@ -249,15 +276,23 @@ function ActivitySidePanel({
               >
                 {activity.name || '—'}
               </h2>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 shrink-0 text-muted-foreground"
-                onClick={onClose}
-                aria-label="Close"
-              >
-                <X className="h-3.5 w-3.5" />
-              </Button>
+              <div className="flex items-center gap-1 shrink-0">
+                <Link
+                  href={openHref}
+                  className="text-xs px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                >
+                  Open
+                </Link>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground"
+                  onClick={onClose}
+                  aria-label="Close"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <Badge className={cn('rounded-full text-[11px] font-medium', activityBadgeClass(activity.activity_type))}>
@@ -383,14 +418,28 @@ function MobilePanel({
 // Cell renderer (module-scope so it never re-creates)
 // ---------------------------------------------------------------------------
 
-function renderCell(a: Activity, colId: ColumnId, isSelected: boolean): React.ReactNode {
+function renderCell(
+  a: Activity,
+  colId: ColumnId,
+  isSelected: boolean,
+  sort: SortState,
+  search: string,
+  dateFrom: string,
+  dateTo: string,
+): React.ReactNode {
   switch (colId) {
     case 'date':
       return <span className="font-mono text-foreground">{fmtDate(a.date)}</span>;
     case 'name':
       return (
         <span className="inline-flex items-center gap-1.5 truncate">
-          {a.name || <span className="text-muted-foreground">—</span>}
+          <Link
+            href={buildDetailHref(a.id, sort, search, dateFrom, dateTo)}
+            className="hover:underline truncate"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {a.name || <span className="text-muted-foreground">—</span>}
+          </Link>
           {!!a.description && (
             <Badge
               variant="outline"
@@ -441,6 +490,10 @@ interface ActivityRowProps {
   isSelected: boolean;
   isFocused: boolean;
   visibleColumns: ColumnDef[];
+  sort: SortState;
+  search: string;
+  dateFrom: string;
+  dateTo: string;
   onRowClick: (id: number, rowIdx: number) => void;
   onToggleCheck: (id: number, rowIdx: number) => void;
 }
@@ -451,6 +504,10 @@ const ActivityRow = memo(function ActivityRow({
   isSelected,
   isFocused,
   visibleColumns,
+  sort,
+  search,
+  dateFrom,
+  dateTo,
   onRowClick,
   onToggleCheck,
 }: ActivityRowProps) {
@@ -498,7 +555,7 @@ const ActivityRow = memo(function ActivityRow({
                 : undefined
           }
         >
-          {renderCell(activity, col.id, isSelected)}
+          {renderCell(activity, col.id, isSelected, sort, search, dateFrom, dateTo)}
         </td>
       ))}
     </tr>
@@ -510,6 +567,7 @@ const ActivityRow = memo(function ActivityRow({
 // ---------------------------------------------------------------------------
 
 export default function ActivityTable() {
+  const router = useRouter();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -666,6 +724,12 @@ export default function ActivityTable() {
   // ---------------------------------------------------------------------------
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key === 'Enter' && focusedIndex !== null && activities[focusedIndex]) {
+      e.preventDefault();
+      const target = activities[focusedIndex];
+      router.push(buildDetailHref(target.id, sort, search, dateFrom, dateTo));
+      return;
+    }
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     if (activities.length === 0) return;
     e.preventDefault();
@@ -898,6 +962,10 @@ export default function ActivityTable() {
                     isSelected={selectedIds.has(a.id)}
                     isFocused={focusedIndex === rowIdx}
                     visibleColumns={visibleColumns}
+                    sort={sort}
+                    search={search}
+                    dateFrom={dateFrom}
+                    dateTo={dateTo}
                     onRowClick={onRowClick}
                     onToggleCheck={onToggleCheck}
                   />
@@ -917,6 +985,7 @@ export default function ActivityTable() {
           {selectedIds.size === 1 && selectedActivities[0] ? (
             <ActivitySidePanel
               activity={selectedActivities[0]}
+              openHref={buildDetailHref(selectedActivities[0].id, sort, search, dateFrom, dateTo)}
               onClose={() => {
                 setSelectedIds(new Set());
                 setFocusedIndex(null);
