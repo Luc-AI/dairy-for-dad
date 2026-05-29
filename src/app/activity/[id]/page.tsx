@@ -7,7 +7,7 @@ import ActivityDetail from './ActivityDetail';
 
 async function loadActivity(id: number): Promise<Activity | null> {
   const rows = await sql.query(
-    `SELECT id, date, name, activity_type, duration_sec, distance_m, elevation_gain_m,
+    `SELECT id, date::text AS date, name, activity_type, duration_sec, distance_m, elevation_gain_m,
             avg_speed_kmh, avg_hr, max_hr, calories, avg_power, tss,
             avg_temperature, min_temperature, max_temperature,
             start_lat, start_lon, location_name, description
