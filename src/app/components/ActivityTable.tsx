@@ -200,6 +200,11 @@ function SummaryStats({ activities }: { activities: Activity[] }) {
   const powerVals = activities.map((a) => a.avg_power).filter((v): v is number => v != null);
   const avgPower = powerVals.length > 0 ? Math.round(powerVals.reduce((s, v) => s + v, 0) / powerVals.length) : null;
 
+  const distanceVals = activities.map((a) => a.distance_m).filter((v): v is number => v != null);
+  const avgDistance = distanceVals.length > 0
+    ? distanceVals.reduce((s, v) => s + v, 0) / distanceVals.length
+    : null;
+
   const stat = (label: string, value: string) => (
     <div key={label} className="flex flex-col gap-0.5">
       <dt className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground leading-none">{label}</dt>
@@ -210,6 +215,7 @@ function SummaryStats({ activities }: { activities: Activity[] }) {
   return (
     <dl className="grid grid-cols-2 gap-x-6 gap-y-5">
       {totalDistance > 0 && stat('Total Distance', fmtDistance(totalDistance))}
+      {avgDistance !== null && stat('Avg Distance', fmtDistance(avgDistance))}
       {totalElevation > 0 && stat('Total Elevation', fmtElevation(totalElevation))}
       {totalDuration > 0 && stat('Total Duration', fmtDuration(totalDuration))}
       {avgHr !== null && stat('Avg HR', `${avgHr} bpm`)}
