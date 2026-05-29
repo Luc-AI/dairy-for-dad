@@ -114,6 +114,7 @@ export default function ActivityDetail({ activity }: { activity: Activity }) {
         }
         setLastSaved(value);
         setSaveState('saved');
+        window.dispatchEvent(new CustomEvent('activities:changed'));
       } catch (e) {
         setSaveState('error');
         toast.error(`Failed to save notes: ${e instanceof Error ? e.message : 'Unknown error'}`);
