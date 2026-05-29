@@ -170,7 +170,7 @@ const COLUMN_DEFS: ColumnDef[] = [
   { id: 'location_name',    label: 'Location',  sortKey: null,               align: 'left',  defaultWidth: 140, minWidth: 60  },
 ];
 
-const LS_KEY = 'activity-table-columns-v4';
+const LS_KEY = 'activity-table-columns-v5';
 
 // ---------------------------------------------------------------------------
 // localStorage helpers
