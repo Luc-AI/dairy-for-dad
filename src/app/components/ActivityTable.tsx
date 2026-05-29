@@ -121,7 +121,7 @@ interface ColumnConfig {
 }
 
 interface PersistedColumnState {
-  version: 1;
+  version: 3;
   columns: ColumnConfig[];
 }
 
@@ -131,20 +131,20 @@ interface PersistedColumnState {
 
 const COLUMN_DEFS: ColumnDef[] = [
   { id: 'date',             label: 'Date',      sortKey: 'date',             align: 'left',  defaultWidth: 100, minWidth: 70  },
-  { id: 'name',             label: 'Name',      sortKey: 'name',             align: 'left',  defaultWidth: 180, minWidth: 80  },
-  { id: 'activity_type',    label: 'Type',      sortKey: null,               align: 'left',  defaultWidth: 110, minWidth: 60  },
+  { id: 'name',             label: 'Name',      sortKey: 'name',             align: 'left',  defaultWidth: 360, minWidth: 80  },
+  { id: 'activity_type',    label: 'Type',      sortKey: null,               align: 'left',  defaultWidth: 66,  minWidth: 60  },
   { id: 'distance_m',       label: 'Distance',  sortKey: 'distance_m',       align: 'right', defaultWidth: 90,  minWidth: 60  },
   { id: 'elevation_gain_m', label: 'Elevation', sortKey: 'elevation_gain_m', align: 'right', defaultWidth: 90,  minWidth: 60  },
   { id: 'duration_sec',     label: 'Duration',  sortKey: 'duration_sec',     align: 'right', defaultWidth: 90,  minWidth: 60  },
   { id: 'avg_hr',           label: 'Avg HR',    sortKey: 'avg_hr',           align: 'right', defaultWidth: 80,  minWidth: 55  },
   { id: 'avg_power',        label: 'Power',     sortKey: 'avg_power',        align: 'right', defaultWidth: 80,  minWidth: 55  },
-  { id: 'avg_temperature',  label: 'Avg °C',    sortKey: 'avg_temperature',  align: 'right', defaultWidth: 75,  minWidth: 55  },
+  { id: 'avg_temperature',  label: 'Avg °C',    sortKey: 'avg_temperature',  align: 'right', defaultWidth: 75,  minWidth: 55,  defaultVisible: false },
   { id: 'min_temperature',  label: 'Min °C',    sortKey: 'min_temperature',  align: 'right', defaultWidth: 75,  minWidth: 55,  defaultVisible: false },
   { id: 'max_temperature',  label: 'Max °C',    sortKey: 'max_temperature',  align: 'right', defaultWidth: 75,  minWidth: 55,  defaultVisible: false },
   { id: 'location_name',    label: 'Location',  sortKey: null,               align: 'left',  defaultWidth: 140, minWidth: 60  },
 ];
 
-const LS_KEY = 'activity-table-columns-v1';
+const LS_KEY = 'activity-table-columns-v3';
 
 // ---------------------------------------------------------------------------
 // localStorage helpers
@@ -165,7 +165,7 @@ function loadColumnConfigs(): ColumnConfig[] {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return defaultColumnConfigs();
     const parsed: PersistedColumnState = JSON.parse(raw);
-    if (parsed.version !== 1) return defaultColumnConfigs();
+    if (parsed.version !== 3) return defaultColumnConfigs();
     const saved = new Map(parsed.columns.map((c) => [c.id, c]));
     return COLUMN_DEFS.map((def, i) => {
       const stored = saved.get(def.id);
@@ -178,7 +178,7 @@ function loadColumnConfigs(): ColumnConfig[] {
 
 function saveColumnConfigs(cols: ColumnConfig[]): void {
   if (typeof window === 'undefined') return;
-  const payload: PersistedColumnState = { version: 1, columns: cols };
+  const payload: PersistedColumnState = { version: 3, columns: cols };
   localStorage.setItem(LS_KEY, JSON.stringify(payload));
 }
 
@@ -455,10 +455,7 @@ export default function ActivityTable() {
   // Column management
   const [columns, setColumns] = useState<ColumnConfig[]>(() => defaultColumnConfigs());
   const [showColMenu, setShowColMenu] = useState(false);
-  const [dragColId, setDragColId] = useState<ColumnId | null>(null);
-  const [dragOverColId, setDragOverColId] = useState<ColumnId | null>(null);
-  const resizeRef = useRef<{ colId: ColumnId; startX: number; startWidth: number } | null>(null);
-  const tableRef = useRef<HTMLTableElement>(null);
+  const tableRef = useRef<HTMLTableElement | null>(null);
 
   // Keyboard navigation
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
@@ -500,6 +497,12 @@ export default function ActivityTable() {
   useEffect(() => {
     const timer = setTimeout(fetchActivities, 300);
     return () => clearTimeout(timer);
+  }, [fetchActivities]);
+
+  useEffect(() => {
+    const handler = () => fetchActivities();
+    window.addEventListener('activities:imported', handler);
+    return () => window.removeEventListener('activities:imported', handler);
   }, [fetchActivities]);
 
   // Sync focusedIndex when activities list changes (e.g. after filtering).
@@ -563,72 +566,6 @@ export default function ActivityTable() {
   function resetColumns() {
     setColumns(defaultColumnConfigs());
     setShowColMenu(false);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Column resize
-  // ---------------------------------------------------------------------------
-
-  function startResize(colId: ColumnId, startX: number) {
-    const cfg = columns.find((c) => c.id === colId);
-    if (!cfg) return;
-    resizeRef.current = { colId, startX, startWidth: cfg.width };
-
-    function onPointerMove(e: PointerEvent) {
-      if (!resizeRef.current) return;
-      const { colId, startX, startWidth } = resizeRef.current;
-      const def = COLUMN_DEFS.find((d) => d.id === colId)!;
-      const delta = e.clientX - startX;
-      const newWidth = Math.max(def.minWidth, startWidth + delta);
-      setColumns((prev) =>
-        prev.map((c) => (c.id === colId ? { ...c, width: newWidth } : c))
-      );
-    }
-
-    function onPointerUp() {
-      resizeRef.current = null;
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-    }
-
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Drag-and-drop reorder
-  // ---------------------------------------------------------------------------
-
-  function handleDragStart(e: React.DragEvent, colId: ColumnId) {
-    setDragColId(colId);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', colId);
-  }
-
-  function handleDragOver(e: React.DragEvent, colId: ColumnId) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    if (colId !== dragColId) setDragOverColId(colId);
-  }
-
-  function handleDrop(e: React.DragEvent, targetColId: ColumnId) {
-    e.preventDefault();
-    if (!dragColId || dragColId === targetColId) return;
-    setColumns((prev) => {
-      const sorted = [...prev].sort((a, b) => a.order - b.order);
-      const dragIdx = sorted.findIndex((c) => c.id === dragColId);
-      const targetIdx = sorted.findIndex((c) => c.id === targetColId);
-      const [dragged] = sorted.splice(dragIdx, 1);
-      sorted.splice(targetIdx, 0, dragged);
-      return sorted.map((c, i) => ({ ...c, order: i }));
-    });
-    setDragColId(null);
-    setDragOverColId(null);
-  }
-
-  function handleDragEnd() {
-    setDragColId(null);
-    setDragOverColId(null);
   }
 
   // ---------------------------------------------------------------------------
@@ -852,48 +789,19 @@ export default function ActivityTable() {
                 </th>
                 {visibleColumns.map((col) => {
                   const cfg = columns.find((c) => c.id === col.id)!;
-                  const isDragging = dragColId === col.id;
-                  const isDragOver = dragOverColId === col.id;
                   return (
                     <th
                       key={col.id}
-                      draggable
-                      onDragStart={(e) => {
-                        if (resizeRef.current) {
-                          e.preventDefault();
-                          return;
-                        }
-                        handleDragStart(e, col.id);
-                      }}
-                      onDragOver={(e) => handleDragOver(e, col.id)}
-                      onDrop={(e) => handleDrop(e, col.id)}
-                      onDragEnd={handleDragEnd}
                       onClick={() => col.sortKey && toggleSort(col.sortKey)}
                       className={[
-                        'relative px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground',
-                        'uppercase tracking-wide select-none whitespace-nowrap',
-                        col.sortKey ? 'cursor-pointer hover:text-foreground' : 'cursor-grab',
-                        isDragging ? 'opacity-40' : '',
-                        isDragOver ? 'bg-primary/10' : '',
+                        'px-3 py-2.5 text-left text-[10px] font-semibold text-muted-foreground',
+                        'uppercase tracking-widest select-none whitespace-nowrap',
+                        col.sortKey ? 'cursor-pointer hover:text-foreground' : '',
                       ].join(' ')}
                       style={{ width: cfg.width }}
                     >
-                      {col.label}
+                      <span className="truncate">{col.label}</span>
                       {col.sortKey && <SortIcon col={col.sortKey} />}
-
-                      {/* Resize handle — always-visible divider, wider hit area, stronger hover */}
-                      <div
-                        className="absolute right-0 top-0 h-full w-3 cursor-col-resize group touch-none"
-                        onMouseDown={(e) => {
-                          e.stopPropagation();
-                          e.preventDefault();
-                          startResize(col.id, e.clientX);
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        aria-label={`Resize ${col.label} column`}
-                      >
-                        <div className="absolute right-0 top-0 h-full w-px bg-border transition-all group-hover:w-[3px] group-hover:bg-primary" />
-                      </div>
                     </th>
                   );
                 })}
