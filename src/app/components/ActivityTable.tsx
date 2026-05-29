@@ -110,6 +110,7 @@ interface ColumnDef {
   align: 'left' | 'right';
   defaultWidth: number;
   minWidth: number;
+  defaultVisible?: boolean;
 }
 
 interface ColumnConfig {
@@ -138,8 +139,8 @@ const COLUMN_DEFS: ColumnDef[] = [
   { id: 'avg_hr',           label: 'Avg HR',    sortKey: 'avg_hr',           align: 'right', defaultWidth: 80,  minWidth: 55  },
   { id: 'avg_power',        label: 'Power',     sortKey: 'avg_power',        align: 'right', defaultWidth: 80,  minWidth: 55  },
   { id: 'avg_temperature',  label: 'Avg °C',    sortKey: 'avg_temperature',  align: 'right', defaultWidth: 75,  minWidth: 55  },
-  { id: 'min_temperature',  label: 'Min °C',    sortKey: 'min_temperature',  align: 'right', defaultWidth: 75,  minWidth: 55  },
-  { id: 'max_temperature',  label: 'Max °C',    sortKey: 'max_temperature',  align: 'right', defaultWidth: 75,  minWidth: 55  },
+  { id: 'min_temperature',  label: 'Min °C',    sortKey: 'min_temperature',  align: 'right', defaultWidth: 75,  minWidth: 55,  defaultVisible: false },
+  { id: 'max_temperature',  label: 'Max °C',    sortKey: 'max_temperature',  align: 'right', defaultWidth: 75,  minWidth: 55,  defaultVisible: false },
   { id: 'location_name',    label: 'Location',  sortKey: null,               align: 'left',  defaultWidth: 140, minWidth: 60  },
 ];
 
@@ -152,7 +153,7 @@ const LS_KEY = 'activity-table-columns-v1';
 function defaultColumnConfigs(): ColumnConfig[] {
   return COLUMN_DEFS.map((def, i) => ({
     id: def.id,
-    visible: true,
+    visible: def.defaultVisible ?? true,
     width: def.defaultWidth,
     order: i,
   }));
@@ -168,7 +169,7 @@ function loadColumnConfigs(): ColumnConfig[] {
     const saved = new Map(parsed.columns.map((c) => [c.id, c]));
     return COLUMN_DEFS.map((def, i) => {
       const stored = saved.get(def.id);
-      return stored ?? { id: def.id, visible: true, width: def.defaultWidth, order: i };
+      return stored ?? { id: def.id, visible: def.defaultVisible ?? true, width: def.defaultWidth, order: i };
     }).sort((a, b) => a.order - b.order);
   } catch {
     return defaultColumnConfigs();
@@ -575,11 +576,12 @@ export default function ActivityTable() {
 
     function onPointerMove(e: PointerEvent) {
       if (!resizeRef.current) return;
-      const def = COLUMN_DEFS.find((d) => d.id === resizeRef.current!.colId)!;
-      const delta = e.clientX - resizeRef.current.startX;
-      const newWidth = Math.max(def.minWidth, resizeRef.current.startWidth + delta);
+      const { colId, startX, startWidth } = resizeRef.current;
+      const def = COLUMN_DEFS.find((d) => d.id === colId)!;
+      const delta = e.clientX - startX;
+      const newWidth = Math.max(def.minWidth, startWidth + delta);
       setColumns((prev) =>
-        prev.map((c) => (c.id === resizeRef.current!.colId ? { ...c, width: newWidth } : c))
+        prev.map((c) => (c.id === colId ? { ...c, width: newWidth } : c))
       );
     }
 
@@ -856,14 +858,20 @@ export default function ActivityTable() {
                     <th
                       key={col.id}
                       draggable
-                      onDragStart={(e) => handleDragStart(e, col.id)}
+                      onDragStart={(e) => {
+                        if (resizeRef.current) {
+                          e.preventDefault();
+                          return;
+                        }
+                        handleDragStart(e, col.id);
+                      }}
                       onDragOver={(e) => handleDragOver(e, col.id)}
                       onDrop={(e) => handleDrop(e, col.id)}
                       onDragEnd={handleDragEnd}
                       onClick={() => col.sortKey && toggleSort(col.sortKey)}
                       className={[
-                        'relative px-3 py-2.5 text-left text-[10px] font-semibold text-muted-foreground',
-                        'uppercase tracking-widest select-none whitespace-nowrap',
+                        'relative px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground',
+                        'uppercase tracking-wide select-none whitespace-nowrap',
                         col.sortKey ? 'cursor-pointer hover:text-foreground' : 'cursor-grab',
                         isDragging ? 'opacity-40' : '',
                         isDragOver ? 'bg-primary/10' : '',
@@ -873,17 +881,18 @@ export default function ActivityTable() {
                       {col.label}
                       {col.sortKey && <SortIcon col={col.sortKey} />}
 
-                      {/* Resize handle */}
+                      {/* Resize handle — always-visible divider, wider hit area, stronger hover */}
                       <div
-                        className="absolute right-0 top-0 h-full w-2 cursor-col-resize group"
+                        className="absolute right-0 top-0 h-full w-3 cursor-col-resize group touch-none"
                         onMouseDown={(e) => {
                           e.stopPropagation();
                           e.preventDefault();
                           startResize(col.id, e.clientX);
                         }}
                         onClick={(e) => e.stopPropagation()}
+                        aria-label={`Resize ${col.label} column`}
                       >
-                        <div className="absolute right-0.5 top-1/4 h-1/2 w-px bg-border group-hover:bg-primary" />
+                        <div className="absolute right-0 top-0 h-full w-px bg-border transition-all group-hover:w-[3px] group-hover:bg-primary" />
                       </div>
                     </th>
                   );
