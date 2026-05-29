@@ -195,7 +195,10 @@ function loadColumnConfigs(): ColumnConfig[] {
     const saved = new Map(parsed.columns.map((c) => [c.id, c]));
     return COLUMN_DEFS.map((def, i) => {
       const stored = saved.get(def.id);
-      return stored ?? { id: def.id, visible: def.defaultVisible ?? true, width: def.defaultWidth, order: i };
+      if (!stored) return { id: def.id, visible: def.defaultVisible ?? true, width: def.defaultWidth, order: i };
+      // Width is always taken from the static defaults so code changes to
+      // COLUMN_DEFS take effect even when older state is persisted.
+      return { ...stored, width: def.defaultWidth };
     }).sort((a, b) => a.order - b.order);
   } catch {
     return defaultColumnConfigs();
@@ -459,7 +462,7 @@ function renderCell(
       );
     case 'activity_type':
       return (
-        <Badge className={cn('rounded-full text-[11px] font-medium', activityBadgeClass(a.activity_type))}>
+        <Badge className={cn('rounded-full text-[11px] font-medium max-w-full truncate block', activityBadgeClass(a.activity_type))}>
           {fmtActivity(a.activity_type)}
         </Badge>
       );
