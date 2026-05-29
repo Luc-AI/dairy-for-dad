@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const query = `
-    SELECT id, date, name, activity_type, duration_sec, distance_m, elevation_gain_m,
+    SELECT id, date::text AS date, name, activity_type, duration_sec, distance_m, elevation_gain_m,
            avg_speed_kmh, avg_hr, max_hr, calories, avg_power, tss,
            avg_temperature, min_temperature, max_temperature, location_name, description
     FROM activities
