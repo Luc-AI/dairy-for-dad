@@ -13,7 +13,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
-import ActivityStats from './ActivityStats';
+import ActivityStats, { DiaryNote } from './ActivityStats';
 
 // ---------------------------------------------------------------------------
 // Format helpers
@@ -157,8 +157,8 @@ interface PersistedColumnState {
 
 const COLUMN_DEFS: ColumnDef[] = [
   { id: 'date',             label: 'Date',      sortKey: 'date',             align: 'left',  defaultWidth: 100, minWidth: 70  },
-  { id: 'name',             label: 'Name',      sortKey: 'name',             align: 'left',  defaultWidth: 360, minWidth: 80  },
-  { id: 'activity_type',    label: 'Type',      sortKey: null,               align: 'left',  defaultWidth: 66,  minWidth: 60  },
+  { id: 'name',             label: 'Name',      sortKey: 'name',             align: 'left',  defaultWidth: 440, minWidth: 80  },
+  { id: 'activity_type',    label: 'Type',      sortKey: null,               align: 'left',  defaultWidth: 90,  minWidth: 60  },
   { id: 'distance_m',       label: 'Distance',  sortKey: 'distance_m',       align: 'right', defaultWidth: 90,  minWidth: 60  },
   { id: 'elevation_gain_m', label: 'Elevation', sortKey: 'elevation_gain_m', align: 'right', defaultWidth: 90,  minWidth: 60  },
   { id: 'duration_sec',     label: 'Duration',  sortKey: 'duration_sec',     align: 'right', defaultWidth: 90,  minWidth: 60  },
@@ -170,7 +170,7 @@ const COLUMN_DEFS: ColumnDef[] = [
   { id: 'location_name',    label: 'Location',  sortKey: null,               align: 'left',  defaultWidth: 140, minWidth: 60  },
 ];
 
-const LS_KEY = 'activity-table-columns-v3';
+const LS_KEY = 'activity-table-columns-v4';
 
 // ---------------------------------------------------------------------------
 // localStorage helpers
@@ -301,6 +301,7 @@ function ActivitySidePanel({
               <span className="text-xs font-mono text-muted-foreground">{fmtDate(activity.date)}</span>
             </div>
           </div>
+          {activity.description && <DiaryNote description={activity.description} />}
           <Separator />
           <ActivityStats activity={activity} />
         </div>
@@ -404,7 +405,10 @@ function MobilePanel({
         <Separator />
         <div className="px-4 py-4">
           {activity ? (
-            <ActivityStats activity={activity} />
+            <div className="flex flex-col gap-5">
+              {activity.description && <DiaryNote description={activity.description} />}
+              <ActivityStats activity={activity} />
+            </div>
           ) : (
             <SummaryStats activities={selectedActivities} />
           )}

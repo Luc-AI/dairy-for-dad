@@ -196,7 +196,7 @@ export default function ActivityDetail({ activity }: { activity: Activity }) {
 
   return (
     <main className="min-h-screen bg-background px-4 py-6">
-      <div className="max-w-[1600px] mx-auto space-y-6">
+      <div className="max-w-4xl mx-auto space-y-6">
         <div className="sticky top-0 -mx-4 px-4 py-3 bg-background/95 backdrop-blur border-b border-border z-10">
           <div className="flex items-center justify-between gap-3">
             <Link href={`/?${buildListQuery(searchParams)}`} className="text-sm text-muted-foreground hover:text-foreground">
