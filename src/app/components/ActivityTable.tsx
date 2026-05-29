@@ -501,6 +501,12 @@ export default function ActivityTable() {
     return () => clearTimeout(timer);
   }, [fetchActivities]);
 
+  useEffect(() => {
+    const handler = () => fetchActivities();
+    window.addEventListener('activities:imported', handler);
+    return () => window.removeEventListener('activities:imported', handler);
+  }, [fetchActivities]);
+
   // Sync focusedIndex when activities list changes (e.g. after filtering).
   useEffect(() => {
     if (selectedIds.size === 1) {
