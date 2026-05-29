@@ -899,7 +899,7 @@ export default function ActivityTable() {
       <div className="flex rounded-xl border border-border overflow-hidden bg-card shadow-sm">
         {/* Table */}
         <div className="flex-1 min-w-0 overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)]">
-          <table ref={tableRef} className="min-w-full divide-y divide-border text-sm table-fixed">
+          <table ref={tableRef} className="divide-y divide-border text-sm table-fixed">
             <colgroup>
               <col style={{ width: 36 }} />
               {visibleColumns.map((col) => {
