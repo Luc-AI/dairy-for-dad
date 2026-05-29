@@ -11,6 +11,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
+import ActivityStats from './ActivityStats';
 
 // ---------------------------------------------------------------------------
 // Format helpers
@@ -180,62 +181,6 @@ function saveColumnConfigs(cols: ColumnConfig[]): void {
   if (typeof window === 'undefined') return;
   const payload: PersistedColumnState = { version: 3, columns: cols };
   localStorage.setItem(LS_KEY, JSON.stringify(payload));
-}
-
-// ---------------------------------------------------------------------------
-// Activity stat block — shared by side panel and sheet
-// ---------------------------------------------------------------------------
-
-function ActivityStats({ activity }: { activity: Activity }) {
-  const stat = (label: string, value: string | null) => (
-    <div key={label} className="flex flex-col gap-0.5">
-      <dt className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground leading-none">{label}</dt>
-      <dd className="text-[15px] font-semibold font-mono tabular-nums text-foreground leading-snug">{value || '—'}</dd>
-    </div>
-  );
-
-  return (
-    <div className="space-y-5">
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-5">
-        {stat('Distance', fmtDistance(activity.distance_m))}
-        {stat('Elevation', fmtElevation(activity.elevation_gain_m))}
-        {stat('Duration', fmtDuration(activity.duration_sec))}
-        {stat('Avg Speed', activity.avg_speed_kmh != null ? `${activity.avg_speed_kmh} km/h` : null)}
-      </dl>
-      <Separator />
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-5">
-        {stat('Avg Power', activity.avg_power != null ? `${activity.avg_power} W` : null)}
-        {stat('TSS', activity.tss != null ? String(activity.tss) : null)}
-        {stat('Avg HR', activity.avg_hr != null ? `${activity.avg_hr} bpm` : null)}
-        {stat('Max HR', activity.max_hr != null ? `${activity.max_hr} bpm` : null)}
-      </dl>
-      <Separator />
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-5">
-        {stat('Calories', activity.calories != null ? activity.calories.toLocaleString() : null)}
-        {stat('Avg Temp', fmtTemp(activity.avg_temperature))}
-        {stat('Min Temp', fmtTemp(activity.min_temperature))}
-        {stat('Max Temp', fmtTemp(activity.max_temperature))}
-      </dl>
-
-      {activity.location_name && (
-        <div>
-          <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground leading-none mb-1.5">Location</p>
-          <p className="text-sm text-foreground">{activity.location_name}</p>
-        </div>
-      )}
-
-      {activity.description && (
-        <div>
-          <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground leading-none mb-1.5">
-            Diary Note
-          </p>
-          <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed border-l-4 border-amber-300 pl-3">
-            {activity.description}
-          </p>
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ---------------------------------------------------------------------------
