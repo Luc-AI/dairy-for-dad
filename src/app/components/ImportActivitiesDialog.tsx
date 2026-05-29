@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -35,6 +35,7 @@ export default function ImportActivitiesDialog({ open, onOpenChange }: Props) {
   const [skippedNoTimestamp, setSkippedNoTimestamp] = useState(0);
   const [newActivities, setNewActivities] = useState<Activity[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const busyRef = useRef(false);
 
   const reset = useCallback(() => {
     setPhase('idle');
@@ -55,70 +56,78 @@ export default function ImportActivitiesDialog({ open, onOpenChange }: Props) {
 
   const handleFiles = useCallback(async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
+    if (busyRef.current) return;
+    busyRef.current = true;
     setPhase('parsing');
     setError(null);
 
-    const entries: FileEntry[] = [];
-    const bodies: string[] = [];
+    try {
+      const entries: FileEntry[] = [];
+      const bodies: string[] = [];
 
-    for (const file of Array.from(fileList)) {
-      const entry: FileEntry = { name: file.name, size: file.size };
-      try {
-        const text = await file.text();
-        // Validate as JSON early so we can flag bad files individually.
-        JSON.parse(text);
-        bodies.push(text);
-      } catch {
-        entry.error = "Couldn't parse — not valid JSON.";
+      for (const file of Array.from(fileList)) {
+        const entry: FileEntry = { name: file.name, size: file.size };
+        try {
+          const text = await file.text();
+          // Validate as JSON early so we can flag bad files individually.
+          JSON.parse(text);
+          bodies.push(text);
+        } catch {
+          entry.error = "Couldn't parse — not valid JSON.";
+        }
+        entries.push(entry);
       }
-      entries.push(entry);
-    }
-    setFiles(entries);
+      setFiles(entries);
 
-    if (bodies.length === 0) {
-      setError("These files don't look like valid JSON.");
-      setPhase('error');
-      return;
-    }
+      if (bodies.length === 0) {
+        setError("These files don't look like valid JSON.");
+        setPhase('error');
+        return;
+      }
 
-    let result;
-    try {
-      result = parseFiles(bodies);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to parse files.');
-      setPhase('error');
-      return;
-    }
+      let result;
+      try {
+        result = parseFiles(bodies);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to parse files.');
+        setPhase('error');
+        return;
+      }
 
-    if (result.activities.length === 0) {
-      setError("These files don't look like Garmin summarized activity exports.");
-      setPhase('error');
-      return;
-    }
+      if (result.activities.length === 0) {
+        setError("These files don't look like Garmin summarized activity exports.");
+        setPhase('error');
+        return;
+      }
 
-    setParsed(result.activities);
-    setSkippedNoTimestamp(result.skippedNoTimestamp);
+      setParsed(result.activities);
+      setSkippedNoTimestamp(result.skippedNoTimestamp);
 
-    // Fetch existing ids for the diff
-    try {
-      const res = await fetch('/api/activities/ids');
-      if (!res.ok) throw new Error(`Server returned ${res.status}`);
-      const existingIds = (await res.json()) as number[];
-      const existing = new Set(existingIds);
-      const fresh = result.activities.filter((a) => !existing.has(a.id));
-      setNewActivities(fresh);
-      setPhase('preview');
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? `Couldn't check existing activities: ${e.message}`
-          : "Couldn't check existing activities."
-      );
-      setPhase('error');
+      // Fetch existing ids for the diff
+      try {
+        const res = await fetch('/api/activities/ids', { cache: 'no-store' });
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        const existingIds = (await res.json()) as number[];
+        const existing = new Set(existingIds);
+        const fresh = result.activities.filter((a) => !existing.has(a.id));
+        setNewActivities(fresh);
+        setPhase('preview');
+      } catch (e) {
+        setError(
+          e instanceof Error
+            ? `Couldn't check existing activities: ${e.message}`
+            : "Couldn't check existing activities."
+        );
+        setPhase('error');
+      }
+    } finally {
+      busyRef.current = false;
     }
   }, []);
 
   const handleImport = useCallback(async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setPhase('importing');
     setError(null);
     try {
@@ -137,12 +146,13 @@ export default function ImportActivitiesDialog({ open, onOpenChange }: Props) {
           ? 'Imported 1 new activity.'
           : `Imported ${inserted} new activities.`
       );
-      // Signal the activity table to refetch
       window.dispatchEvent(new CustomEvent('activities:imported'));
       handleOpenChange(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Import failed.');
       setPhase('error');
+    } finally {
+      busyRef.current = false;
     }
   }, [newActivities, handleOpenChange]);
 
@@ -254,7 +264,7 @@ export default function ImportActivitiesDialog({ open, onOpenChange }: Props) {
             {phase === 'preview' && newActivities.length > 0 ? 'Cancel' : 'Close'}
           </Button>
           {phase === 'preview' && newActivities.length > 0 && (
-            <Button onClick={handleImport} disabled={false}>
+            <Button onClick={handleImport}>
               Import {newActivities.length}
             </Button>
           )}

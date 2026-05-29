@@ -12,7 +12,7 @@ import { parseSummarizedActivitiesJson, dedupeById } from './garmin-parse';
 import { parseFiles } from './garmin-parse';
 
 describe('unit conversions', () => {
-  it('cmToM: 834424 cm → 8344.24 m, rounded to 1 decimal', () => {
+  it('cmToM: 834424 cm → 8344.24 m', () => {
     expect(cmToM(834424)).toBe(8344.24);
   });
 
