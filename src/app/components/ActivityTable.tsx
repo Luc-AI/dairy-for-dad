@@ -446,8 +446,8 @@ export default function ActivityTable() {
 
   useEffect(() => {
     const handler = () => fetchActivities();
-    window.addEventListener('activities:imported', handler);
-    return () => window.removeEventListener('activities:imported', handler);
+    window.addEventListener('activities:changed', handler);
+    return () => window.removeEventListener('activities:changed', handler);
   }, [fetchActivities]);
 
   // Sync focusedIndex when activities list changes (e.g. after filtering).
