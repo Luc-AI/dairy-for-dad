@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Activity } from '@/lib/db';
 import { X, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
+import ActivityStats from './ActivityStats';
 
 // ---------------------------------------------------------------------------
 // Format helpers
@@ -183,62 +184,6 @@ function saveColumnConfigs(cols: ColumnConfig[]): void {
 }
 
 // ---------------------------------------------------------------------------
-// Activity stat block — shared by side panel and sheet
-// ---------------------------------------------------------------------------
-
-function ActivityStats({ activity }: { activity: Activity }) {
-  const stat = (label: string, value: string | null) => (
-    <div key={label} className="flex flex-col gap-0.5">
-      <dt className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground leading-none">{label}</dt>
-      <dd className="text-[15px] font-semibold font-mono tabular-nums text-foreground leading-snug">{value || '—'}</dd>
-    </div>
-  );
-
-  return (
-    <div className="space-y-5">
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-5">
-        {stat('Distance', fmtDistance(activity.distance_m))}
-        {stat('Elevation', fmtElevation(activity.elevation_gain_m))}
-        {stat('Duration', fmtDuration(activity.duration_sec))}
-        {stat('Avg Speed', activity.avg_speed_kmh != null ? `${activity.avg_speed_kmh} km/h` : null)}
-      </dl>
-      <Separator />
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-5">
-        {stat('Avg Power', activity.avg_power != null ? `${activity.avg_power} W` : null)}
-        {stat('TSS', activity.tss != null ? String(activity.tss) : null)}
-        {stat('Avg HR', activity.avg_hr != null ? `${activity.avg_hr} bpm` : null)}
-        {stat('Max HR', activity.max_hr != null ? `${activity.max_hr} bpm` : null)}
-      </dl>
-      <Separator />
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-5">
-        {stat('Calories', activity.calories != null ? activity.calories.toLocaleString() : null)}
-        {stat('Avg Temp', fmtTemp(activity.avg_temperature))}
-        {stat('Min Temp', fmtTemp(activity.min_temperature))}
-        {stat('Max Temp', fmtTemp(activity.max_temperature))}
-      </dl>
-
-      {activity.location_name && (
-        <div>
-          <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground leading-none mb-1.5">Location</p>
-          <p className="text-sm text-foreground">{activity.location_name}</p>
-        </div>
-      )}
-
-      {activity.description && (
-        <div>
-          <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground leading-none mb-1.5">
-            Diary Note
-          </p>
-          <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed border-l-4 border-amber-300 pl-3">
-            {activity.description}
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Summary stats — shared by side panel and sheet
 // ---------------------------------------------------------------------------
 
@@ -255,6 +200,11 @@ function SummaryStats({ activities }: { activities: Activity[] }) {
   const powerVals = activities.map((a) => a.avg_power).filter((v): v is number => v != null);
   const avgPower = powerVals.length > 0 ? Math.round(powerVals.reduce((s, v) => s + v, 0) / powerVals.length) : null;
 
+  const distanceVals = activities.map((a) => a.distance_m).filter((v): v is number => v != null);
+  const avgDistance = distanceVals.length > 0
+    ? distanceVals.reduce((s, v) => s + v, 0) / distanceVals.length
+    : null;
+
   const stat = (label: string, value: string) => (
     <div key={label} className="flex flex-col gap-0.5">
       <dt className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground leading-none">{label}</dt>
@@ -265,6 +215,7 @@ function SummaryStats({ activities }: { activities: Activity[] }) {
   return (
     <dl className="grid grid-cols-2 gap-x-6 gap-y-5">
       {totalDistance > 0 && stat('Total Distance', fmtDistance(totalDistance))}
+      {avgDistance !== null && stat('Avg Distance', fmtDistance(avgDistance))}
       {totalElevation > 0 && stat('Total Elevation', fmtElevation(totalElevation))}
       {totalDuration > 0 && stat('Total Duration', fmtDuration(totalDuration))}
       {avgHr !== null && stat('Avg HR', `${avgHr} bpm`)}
@@ -429,6 +380,132 @@ function MobilePanel({
 }
 
 // ---------------------------------------------------------------------------
+// Cell renderer (module-scope so it never re-creates)
+// ---------------------------------------------------------------------------
+
+function renderCell(a: Activity, colId: ColumnId, isSelected: boolean): React.ReactNode {
+  switch (colId) {
+    case 'date':
+      return <span className="font-mono text-foreground">{fmtDate(a.date)}</span>;
+    case 'name':
+      return (
+        <span className="inline-flex items-center gap-1.5 truncate">
+          {a.name || <span className="text-muted-foreground">—</span>}
+          {!!a.description && (
+            <Badge
+              variant="outline"
+              className={`text-xs leading-none py-0 ${
+                isSelected ? 'border-primary/60 text-primary' : ''
+              }`}
+              title="Has diary note"
+            >
+              note
+            </Badge>
+          )}
+        </span>
+      );
+    case 'activity_type':
+      return (
+        <Badge className={cn('rounded-full text-[11px] font-medium', activityBadgeClass(a.activity_type))}>
+          {fmtActivity(a.activity_type)}
+        </Badge>
+      );
+    case 'distance_m':
+      return fmtDistance(a.distance_m);
+    case 'elevation_gain_m':
+      return fmtElevation(a.elevation_gain_m);
+    case 'duration_sec':
+      return fmtDuration(a.duration_sec);
+    case 'avg_hr':
+      return a.avg_hr != null ? `${a.avg_hr} bpm` : '—';
+    case 'avg_power':
+      return a.avg_power != null ? `${a.avg_power} W` : '—';
+    case 'avg_temperature':
+      return fmtTemp(a.avg_temperature);
+    case 'min_temperature':
+      return fmtTemp(a.min_temperature);
+    case 'max_temperature':
+      return fmtTemp(a.max_temperature);
+    case 'location_name':
+      return a.location_name || '—';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Memoized row — only re-renders when its own props change
+// ---------------------------------------------------------------------------
+
+interface ActivityRowProps {
+  activity: Activity;
+  rowIdx: number;
+  isSelected: boolean;
+  isFocused: boolean;
+  visibleColumns: ColumnDef[];
+  onRowClick: (id: number, rowIdx: number) => void;
+  onToggleCheck: (id: number, rowIdx: number) => void;
+}
+
+const ActivityRow = memo(function ActivityRow({
+  activity,
+  rowIdx,
+  isSelected,
+  isFocused,
+  visibleColumns,
+  onRowClick,
+  onToggleCheck,
+}: ActivityRowProps) {
+  return (
+    <tr
+      data-focused={isFocused ? 'true' : undefined}
+      className={cn(
+        'cursor-pointer border-l-[3px]',
+        isSelected
+          ? 'bg-primary/10 border-l-primary'
+          : isFocused
+            ? 'bg-primary/5 border-l-primary/40'
+            : cn(
+                'hover:bg-accent border-l-transparent',
+                rowIdx % 2 === 1 ? 'bg-muted/30' : ''
+              )
+      )}
+      onClick={() => onRowClick(activity.id, rowIdx)}
+    >
+      <td
+        className="w-9 px-2 py-2"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Checkbox
+          checked={isSelected}
+          onCheckedChange={() => onToggleCheck(activity.id, rowIdx)}
+          aria-label={`Select ${activity.name ?? 'activity'}`}
+        />
+      </td>
+      {visibleColumns.map((col) => (
+        <td
+          key={col.id}
+          className={[
+            'px-3 py-2',
+            col.align === 'right' ? 'text-right tabular-nums' : '',
+            col.id === 'name' || col.id === 'location_name'
+              ? 'max-w-0 truncate'
+              : 'whitespace-nowrap',
+          ].join(' ')}
+          title={
+            col.id === 'name'
+              ? (activity.name ?? '')
+              : col.id === 'location_name'
+                ? (activity.location_name ?? '')
+                : undefined
+          }
+        >
+          {renderCell(activity, col.id, isSelected)}
+        </td>
+      ))}
+    </tr>
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -501,8 +578,8 @@ export default function ActivityTable() {
 
   useEffect(() => {
     const handler = () => fetchActivities();
-    window.addEventListener('activities:imported', handler);
-    return () => window.removeEventListener('activities:imported', handler);
+    window.addEventListener('activities:changed', handler);
+    return () => window.removeEventListener('activities:changed', handler);
   }, [fetchActivities]);
 
   // Sync focusedIndex when activities list changes (e.g. after filtering).
@@ -520,11 +597,23 @@ export default function ActivityTable() {
   useEffect(() => {
     if (focusedIndex === null) return;
     const row = tableRef.current?.querySelector('tr[data-focused="true"]');
-    row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    row?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
   }, [focusedIndex]);
 
-  const allChecked = activities.length > 0 && activities.every((a) => selectedIds.has(a.id));
-  const someChecked = activities.some((a) => selectedIds.has(a.id));
+  const { allChecked, someChecked, selectedActivities } = useMemo(() => {
+    let some = false;
+    let all = activities.length > 0;
+    const sel: Activity[] = [];
+    for (const a of activities) {
+      if (selectedIds.has(a.id)) {
+        some = true;
+        sel.push(a);
+      } else {
+        all = false;
+      }
+    }
+    return { allChecked: all, someChecked: some, selectedActivities: sel };
+  }, [activities, selectedIds]);
 
   function toggleSort(key: SortKey) {
     setSort((prev) =>
@@ -545,10 +634,14 @@ export default function ActivityTable() {
   // Column management
   // ---------------------------------------------------------------------------
 
-  const visibleColumns = [...columns]
-    .sort((a, b) => a.order - b.order)
-    .filter((c) => c.visible)
-    .map((c) => COLUMN_DEFS.find((d) => d.id === c.id)!);
+  const visibleColumns = useMemo(
+    () =>
+      [...columns]
+        .sort((a, b) => a.order - b.order)
+        .filter((c) => c.visible)
+        .map((c) => COLUMN_DEFS.find((d) => d.id === c.id)!),
+    [columns]
+  );
 
   const colSpan = visibleColumns.length + 1;
 
@@ -595,58 +688,34 @@ export default function ActivityTable() {
   }
 
   // ---------------------------------------------------------------------------
-  // Cell renderer
+  // Stable row callbacks (functional updates → empty deps)
   // ---------------------------------------------------------------------------
 
-  function renderCell(a: Activity, colId: ColumnId, isSelected: boolean): React.ReactNode {
-    switch (colId) {
-      case 'date':
-        return <span className="font-mono text-foreground">{fmtDate(a.date)}</span>;
-      case 'name':
-        return (
-          <span className="inline-flex items-center gap-1.5 truncate">
-            {a.name || <span className="text-muted-foreground">—</span>}
-            {!!a.description && (
-              <Badge
-                variant="outline"
-                className={`text-xs leading-none py-0 ${
-                  isSelected ? 'border-primary/60 text-primary' : ''
-                }`}
-                title="Has diary note"
-              >
-                note
-              </Badge>
-            )}
-          </span>
-        );
-      case 'activity_type':
-        return (
-          <Badge className={cn('rounded-full text-[11px] font-medium', activityBadgeClass(a.activity_type))}>
-            {fmtActivity(a.activity_type)}
-          </Badge>
-        );
-      case 'distance_m':
-        return fmtDistance(a.distance_m);
-      case 'elevation_gain_m':
-        return fmtElevation(a.elevation_gain_m);
-      case 'duration_sec':
-        return fmtDuration(a.duration_sec);
-      case 'avg_hr':
-        return a.avg_hr != null ? `${a.avg_hr} bpm` : '—';
-      case 'avg_power':
-        return a.avg_power != null ? `${a.avg_power} W` : '—';
-      case 'avg_temperature':
-        return fmtTemp(a.avg_temperature);
-      case 'min_temperature':
-        return fmtTemp(a.min_temperature);
-      case 'max_temperature':
-        return fmtTemp(a.max_temperature);
-      case 'location_name':
-        return a.location_name || '—';
-    }
-  }
+  const onRowClick = useCallback((id: number, rowIdx: number) => {
+    setSelectedIds((prev) => {
+      const isOnly = prev.size === 1 && prev.has(id);
+      if (isOnly) {
+        setFocusedIndex(null);
+        return new Set();
+      }
+      setFocusedIndex(rowIdx);
+      return new Set([id]);
+    });
+  }, []);
 
-  const selectedActivities = activities.filter((a) => selectedIds.has(a.id));
+  const onToggleCheck = useCallback((id: number, rowIdx: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+        setFocusedIndex(rowIdx);
+      }
+      return next;
+    });
+  }, []);
+
   const panelVisible = selectedIds.size > 0;
 
   return (
@@ -821,81 +890,18 @@ export default function ActivityTable() {
                   </td>
                 </tr>
               ) : (
-                activities.map((a, rowIdx) => {
-                  const isSelected = selectedIds.has(a.id);
-                  const isFocused = focusedIndex === rowIdx;
-                  return (
-                    <tr
-                      key={a.id}
-                      data-focused={isFocused ? 'true' : undefined}
-                      className={cn(
-                        'transition-colors duration-100 cursor-pointer border-l-[3px]',
-                        isSelected
-                          ? 'bg-primary/10 border-l-primary'
-                          : isFocused
-                            ? 'bg-primary/5 border-l-primary/40'
-                            : cn(
-                                'hover:bg-accent border-l-transparent',
-                                rowIdx % 2 === 1 ? 'bg-muted/30' : ''
-                              )
-                      )}
-                      onClick={() => {
-                        const isOnlySelected = selectedIds.size === 1 && isSelected;
-                        if (isOnlySelected) {
-                          setSelectedIds(new Set());
-                          setFocusedIndex(null);
-                        } else {
-                          setSelectedIds(new Set([a.id]));
-                          setFocusedIndex(rowIdx);
-                        }
-                      }}
-                    >
-                      <td
-                        className="w-9 px-2 py-2"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Checkbox
-                          checked={isSelected}
-                          onCheckedChange={() => {
-                            const adding = !selectedIds.has(a.id);
-                            setSelectedIds((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(a.id)) {
-                                next.delete(a.id);
-                              } else {
-                                next.add(a.id);
-                              }
-                              return next;
-                            });
-                            if (adding) setFocusedIndex(rowIdx);
-                          }}
-                          aria-label={`Select ${a.name ?? 'activity'}`}
-                        />
-                      </td>
-                      {visibleColumns.map((col) => (
-                        <td
-                          key={col.id}
-                          className={[
-                            'px-3 py-2',
-                            col.align === 'right' ? 'text-right tabular-nums' : '',
-                            col.id === 'name' || col.id === 'location_name'
-                              ? 'max-w-0 truncate'
-                              : 'whitespace-nowrap',
-                          ].join(' ')}
-                          title={
-                            col.id === 'name'
-                              ? (a.name ?? '')
-                              : col.id === 'location_name'
-                                ? (a.location_name ?? '')
-                                : undefined
-                          }
-                        >
-                          {renderCell(a, col.id, isSelected)}
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })
+                activities.map((a, rowIdx) => (
+                  <ActivityRow
+                    key={a.id}
+                    activity={a}
+                    rowIdx={rowIdx}
+                    isSelected={selectedIds.has(a.id)}
+                    isFocused={focusedIndex === rowIdx}
+                    visibleColumns={visibleColumns}
+                    onRowClick={onRowClick}
+                    onToggleCheck={onToggleCheck}
+                  />
+                ))
               )}
             </tbody>
           </table>

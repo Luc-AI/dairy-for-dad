@@ -146,7 +146,7 @@ export default function ImportActivitiesDialog({ open, onOpenChange }: Props) {
           ? 'Imported 1 new activity.'
           : `Imported ${inserted} new activities.`
       );
-      window.dispatchEvent(new CustomEvent('activities:imported'));
+      window.dispatchEvent(new CustomEvent('activities:changed'));
       handleOpenChange(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Import failed.');
