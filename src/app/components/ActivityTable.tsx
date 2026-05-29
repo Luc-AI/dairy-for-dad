@@ -139,12 +139,12 @@ const COLUMN_DEFS: ColumnDef[] = [
   { id: 'avg_hr',           label: 'Avg HR',    sortKey: 'avg_hr',           align: 'right', defaultWidth: 80,  minWidth: 55  },
   { id: 'avg_power',        label: 'Power',     sortKey: 'avg_power',        align: 'right', defaultWidth: 80,  minWidth: 55  },
   { id: 'avg_temperature',  label: 'Avg °C',    sortKey: 'avg_temperature',  align: 'right', defaultWidth: 75,  minWidth: 55,  defaultVisible: false },
-  { id: 'min_temperature',  label: 'Min °C',    sortKey: 'min_temperature',  align: 'right', defaultWidth: 75,  minWidth: 55  },
-  { id: 'max_temperature',  label: 'Max °C',    sortKey: 'max_temperature',  align: 'right', defaultWidth: 75,  minWidth: 55  },
+  { id: 'min_temperature',  label: 'Min °C',    sortKey: 'min_temperature',  align: 'right', defaultWidth: 75,  minWidth: 55,  defaultVisible: false },
+  { id: 'max_temperature',  label: 'Max °C',    sortKey: 'max_temperature',  align: 'right', defaultWidth: 75,  minWidth: 55,  defaultVisible: false },
   { id: 'location_name',    label: 'Location',  sortKey: null,               align: 'left',  defaultWidth: 140, minWidth: 60  },
 ];
 
-const LS_KEY = 'activity-table-columns-v2';
+const LS_KEY = 'activity-table-columns-v3';
 
 // ---------------------------------------------------------------------------
 // localStorage helpers
