@@ -73,14 +73,14 @@ export default function ImportActivitiesDialog({ open, onOpenChange }: Props) {
           JSON.parse(text);
           bodies.push(text);
         } catch {
-          entry.error = "Couldn't parse — not valid JSON.";
+          entry.error = 'Kein gültiges JSON.';
         }
         entries.push(entry);
       }
       setFiles(entries);
 
       if (bodies.length === 0) {
-        setError("These files don't look like valid JSON.");
+        setError('Diese Dateien enthalten kein gültiges JSON.');
         setPhase('error');
         return;
       }
@@ -89,13 +89,13 @@ export default function ImportActivitiesDialog({ open, onOpenChange }: Props) {
       try {
         result = parseFiles(bodies);
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Failed to parse files.');
+        setError(e instanceof Error ? e.message : 'Dateien konnten nicht gelesen werden.');
         setPhase('error');
         return;
       }
 
       if (result.activities.length === 0) {
-        setError("These files don't look like Garmin summarized activity exports.");
+        setError('Das sieht nicht nach einem Garmin-Export (summarizedActivities) aus.');
         setPhase('error');
         return;
       }
@@ -106,7 +106,7 @@ export default function ImportActivitiesDialog({ open, onOpenChange }: Props) {
       // Fetch existing ids for the diff
       try {
         const res = await fetch('/api/activities/ids', { cache: 'no-store' });
-        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        if (!res.ok) throw new Error(`Server antwortete mit ${res.status}`);
         const existingIds = (await res.json()) as number[];
         const existing = new Set(existingIds);
         const fresh = result.activities.filter((a) => !existing.has(a.id));
@@ -115,8 +115,8 @@ export default function ImportActivitiesDialog({ open, onOpenChange }: Props) {
       } catch (e) {
         setError(
           e instanceof Error
-            ? `Couldn't check existing activities: ${e.message}`
-            : "Couldn't check existing activities."
+            ? `Vorhandene Aktivitäten konnten nicht geprüft werden: ${e.message}`
+            : 'Vorhandene Aktivitäten konnten nicht geprüft werden.'
         );
         setPhase('error');
       }
@@ -138,18 +138,18 @@ export default function ImportActivitiesDialog({ open, onOpenChange }: Props) {
       });
       const json = await res.json();
       if (!res.ok) {
-        throw new Error(json?.error ?? `Server returned ${res.status}`);
+        throw new Error(json?.error ?? `Server antwortete mit ${res.status}`);
       }
       const inserted: number = json.inserted ?? 0;
       toast.success(
         inserted === 1
-          ? 'Imported 1 new activity.'
-          : `Imported ${inserted} new activities.`
+          ? '1 neue Aktivität importiert.'
+          : `${inserted.toLocaleString('de-CH')} neue Aktivitäten importiert.`
       );
       window.dispatchEvent(new CustomEvent('activities:changed'));
       handleOpenChange(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Import failed.');
+      setError(e instanceof Error ? e.message : 'Import fehlgeschlagen.');
       setPhase('error');
     } finally {
       busyRef.current = false;
@@ -181,10 +181,10 @@ export default function ImportActivitiesDialog({ open, onOpenChange }: Props) {
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Import Garmin activities</DialogTitle>
+          <DialogTitle>Garmin-Daten importieren</DialogTitle>
           <DialogDescription>
-            Upload one or more <code>*_summarizedActivities.json</code> files from your Garmin export.
-            New activities will be added; existing ones are left alone.
+            Eine oder mehrere <code>*_summarizedActivities.json</code>-Dateien aus dem Garmin-Export
+            hochladen. Neue Aktivitäten werden hinzugefügt, bestehende bleiben unverändert.
           </DialogDescription>
         </DialogHeader>
 
@@ -196,8 +196,8 @@ export default function ImportActivitiesDialog({ open, onOpenChange }: Props) {
         >
           <Upload className="w-6 h-6 text-muted-foreground" />
           <div className="text-sm text-muted-foreground text-center">
-            Drop <code>*_summarizedActivities.json</code> files
-            <br />or click to choose
+            Dateien hierher ziehen
+            <br />oder tippen zum Auswählen
           </div>
           <input
             id="garmin-files"
@@ -220,59 +220,61 @@ export default function ImportActivitiesDialog({ open, onOpenChange }: Props) {
         )}
 
         {phase === 'parsing' && (
-          <p className="text-sm text-muted-foreground">Reading files…</p>
+          <p className="text-sm text-muted-foreground">Dateien werden gelesen…</p>
         )}
 
         {previewSummary && (
           <div className="text-sm space-y-1">
             <p>
-              Found <strong>{previewSummary.total.toLocaleString()}</strong> activities across {files.filter((f) => !f.error).length} file
-              {files.filter((f) => !f.error).length === 1 ? '' : 's'}.
+              <strong>{previewSummary.total.toLocaleString('de-CH')}</strong> Aktivitäten in{' '}
+              {files.filter((f) => !f.error).length}{' '}
+              {files.filter((f) => !f.error).length === 1 ? 'Datei' : 'Dateien'} gefunden.
             </p>
             {previewSummary.fresh > 0 ? (
               <p>
-                <strong>{previewSummary.fresh.toLocaleString()}</strong> new,{' '}
-                {previewSummary.dup.toLocaleString()} already in your database.
+                <strong>{previewSummary.fresh.toLocaleString('de-CH')}</strong> neu,{' '}
+                {previewSummary.dup.toLocaleString('de-CH')} bereits vorhanden.
               </p>
             ) : (
               <p className="text-muted-foreground">
-                Nothing to import — everything in these files is already in your database.
+                Nichts zu importieren – alles ist bereits vorhanden.
               </p>
             )}
             {skippedNoTimestamp > 0 && (
               <p className="text-xs text-muted-foreground">
-                ({skippedNoTimestamp} skipped due to missing timestamp.)
+                ({skippedNoTimestamp} ohne Zeitstempel übersprungen.)
               </p>
             )}
           </div>
         )}
 
         {phase === 'importing' && (
-          <p className="text-sm text-muted-foreground">Importing…</p>
+          <p className="text-sm text-muted-foreground">Wird importiert…</p>
         )}
 
         {phase === 'error' && error && (
           <p className="text-sm text-destructive">{error}</p>
         )}
 
-        <DialogFooter>
+        <DialogFooter className="gap-2">
           <Button
             variant="ghost"
+            className="h-11"
             onClick={() => handleOpenChange(false)}
             disabled={phase === 'importing'}
           >
-            {phase === 'preview' && newActivities.length > 0 ? 'Cancel' : 'Close'}
+            {phase === 'preview' && newActivities.length > 0 ? 'Abbrechen' : 'Schliessen'}
           </Button>
           {phase === 'preview' && newActivities.length > 0 && (
-            <Button onClick={handleImport}>
-              Import {newActivities.length}
+            <Button className="h-11" onClick={handleImport}>
+              {newActivities.length.toLocaleString('de-CH')} importieren
             </Button>
           )}
           {phase === 'importing' && (
-            <Button disabled>Importing…</Button>
+            <Button className="h-11" disabled>Wird importiert…</Button>
           )}
           {phase === 'error' && parsed.length > 0 && newActivities.length > 0 && (
-            <Button onClick={handleImport}>Retry</Button>
+            <Button className="h-11" onClick={handleImport}>Erneut versuchen</Button>
           )}
         </DialogFooter>
       </DialogContent>

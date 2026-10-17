@@ -5,13 +5,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { SESSION_COOKIE, expectedSessionToken, verifyPassword } from '@/lib/auth';
+import { APP_NAME } from '@/lib/app';
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ message?: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
-  const { message } = await searchParams;
+  const { error } = await searchParams;
 
   async function signIn(formData: FormData) {
     'use server';
@@ -19,7 +20,7 @@ export default async function LoginPage({
     const password = formData.get('password') as string;
 
     if (!(await verifyPassword(password))) {
-      redirect('/login?message=Invalid+password');
+      redirect('/login?error=1');
     }
 
     const token = await expectedSessionToken();
@@ -36,24 +37,26 @@ export default async function LoginPage({
   }
 
   return (
-    <main className="min-h-screen bg-background flex items-center justify-center px-4">
+    <main className="min-h-dvh flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-foreground">Activity Log</h1>
-          <p className="text-sm text-muted-foreground mt-1">Sign in to continue</p>
+          <h1 className="text-2xl font-bold">{APP_NAME}</h1>
+          <p className="text-muted-foreground mt-1">Bitte anmelden</p>
         </div>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Sign in</CardTitle>
-            {message && (
-              <CardDescription className="text-destructive">{message}</CardDescription>
+            <CardTitle className="text-lg">Anmelden</CardTitle>
+            {error && (
+              <CardDescription className="text-destructive" role="alert">
+                Falsches Passwort. Bitte nochmals versuchen.
+              </CardDescription>
             )}
           </CardHeader>
           <CardContent>
             <form action={signIn} className="space-y-4">
               <div className="space-y-1.5">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">Passwort</Label>
                 <Input
                   id="password"
                   name="password"
@@ -61,11 +64,13 @@ export default async function LoginPage({
                   required
                   autoComplete="current-password"
                   autoFocus
+                  aria-invalid={error ? true : undefined}
+                  className="h-11 text-base md:text-base"
                 />
               </div>
 
-              <Button type="submit" className="w-full">
-                Sign in
+              <Button type="submit" className="h-11 w-full text-base">
+                Anmelden
               </Button>
             </form>
           </CardContent>

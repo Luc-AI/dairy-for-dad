@@ -3,95 +3,91 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Loader2, MapPin } from 'lucide-react';
 import type { Activity } from '@/lib/db';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import ActivityStats from '@/app/components/ActivityStats';
-import { findNeighbors } from '@/lib/activity-neighbors';
+import ActivityStats, { HeroStats } from '@/app/components/ActivityStats';
+import { findNeighbors, pagerTargets } from '@/lib/activity-neighbors';
+import { activityBadgeClass, activityTypeLabel } from '@/lib/activity-types';
+import { fmtDate, fmtDateShort, fmtDateWithWeekday } from '@/lib/format';
+import { detailHref, listHref, parseListFilters, toApiParams } from '@/lib/list-query';
+import { useIsDesktop } from '@/hooks/use-media-query';
 
-function fmtDate(d: string) {
-  return new Date(d + 'T00:00:00').toLocaleDateString('de-CH', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
-}
+type SaveState = 'saved' | 'saving' | 'error';
 
-function fmtActivity(t: string | null) {
-  if (!t) return '—';
-  return t.replace(/_/g, ' ');
-}
-
-const TYPE_BADGE: Record<string, string> = {
-  'road biking':    'bg-primary/10 text-primary border-primary/20',
-  'virtual ride':   'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20',
-  'indoor cycling': 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
-};
-
-function activityBadgeClass(type: string | null): string {
-  const key = (type ?? '').toLowerCase().replace(/_/g, ' ');
-  return TYPE_BADGE[key] ?? 'bg-secondary text-secondary-foreground border-transparent';
-}
-
-function buildListQuery(params: URLSearchParams): string {
-  const q = new URLSearchParams();
-  const sort = params.get('sort') ?? 'date';
-  const dir = params.get('dir') ?? 'desc';
-  q.set('sortBy', sort);
-  q.set('sortDir', dir);
-  const search = params.get('search');
-  const from = params.get('from');
-  const to = params.get('to');
-  if (search) q.set('search', search);
-  if (from) q.set('dateFrom', from);
-  if (to) q.set('dateTo', to);
-  return q.toString();
-}
-
-function detailHref(id: number, params: URLSearchParams): string {
-  const carried = new URLSearchParams();
-  for (const key of ['sort', 'dir', 'search', 'from', 'to']) {
-    const v = params.get(key);
-    if (v) carried.set(key, v);
+function SaveIndicator({ state, onRetry }: { state: SaveState; onRetry: () => void }) {
+  if (state === 'error') {
+    return (
+      <Button variant="ghost" size="sm" className="h-11 text-destructive hover:text-destructive" onClick={onRetry}>
+        Nicht gespeichert – erneut versuchen
+      </Button>
+    );
   }
-  const qs = carried.toString();
-  return qs ? `/activity/${id}?${qs}` : `/activity/${id}`;
+  return (
+    <span className="flex items-center gap-1.5 pr-2 text-sm text-muted-foreground" role="status">
+      {state === 'saving' ? (
+        <>
+          <Loader2 className="size-4 animate-spin" /> Speichert…
+        </>
+      ) : (
+        <>
+          <Check className="size-4" /> Gespeichert
+        </>
+      )}
+    </span>
+  );
 }
 
 export default function ActivityDetail({ activity }: { activity: Activity }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const filters = useMemo(() => parseListFilters(searchParams), [searchParams]);
+  const isDesktop = useIsDesktop();
 
-  const [orderedIds, setOrderedIds] = useState<number[] | null>(null);
+  // ---------------------------------------------------------------------------
+  // List context for prev/next
+  // ---------------------------------------------------------------------------
+
+  const [listRows, setListRows] = useState<Pick<Activity, 'id' | 'date'>[] | null>(null);
   const [neighborsError, setNeighborsError] = useState(false);
+  const apiQuery = toApiParams(filters).toString();
 
   useEffect(() => {
-    let cancelled = false;
+    const ctrl = new AbortController();
     setNeighborsError(false);
-    const qs = buildListQuery(searchParams);
-    fetch(`/api/activities?${qs}`)
+    fetch(`/api/activities?${apiQuery}`, { signal: ctrl.signal })
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
+        return r.json() as Promise<Activity[]>;
       })
-      .then((rows: Activity[]) => {
-        if (cancelled) return;
-        setOrderedIds(rows.map((a) => a.id));
-      })
+      .then((rows) => setListRows(rows.map(({ id, date }) => ({ id, date }))))
       .catch(() => {
-        if (cancelled) return;
+        if (ctrl.signal.aborted) return;
         setNeighborsError(true);
-        setOrderedIds([]);
+        setListRows([]);
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [searchParams]);
+    return () => ctrl.abort();
+  }, [apiQuery]);
 
-  type SaveState = 'saved' | 'saving' | 'error';
+  const targets = useMemo(() => {
+    const ids = listRows?.map((r) => r.id) ?? [];
+    return pagerTargets(findNeighbors(ids, activity.id), filters);
+  }, [listRows, activity.id, filters]);
+
+  const dateOf = useCallback(
+    (id: number | null) => (id === null ? null : (listRows?.find((r) => r.id === id)?.date ?? null)),
+    [listRows]
+  );
+
+  // ---------------------------------------------------------------------------
+  // Notes autosave
+  // ---------------------------------------------------------------------------
 
   const [notes, setNotes] = useState<string>(activity.description ?? '');
   const [lastSaved, setLastSaved] = useState<string>(activity.description ?? '');
@@ -117,7 +113,7 @@ export default function ActivityDetail({ activity }: { activity: Activity }) {
         window.dispatchEvent(new CustomEvent('activities:changed'));
       } catch (e) {
         setSaveState('error');
-        toast.error(`Failed to save notes: ${e instanceof Error ? e.message : 'Unknown error'}`);
+        toast.error(`Tagebuch konnte nicht gespeichert werden: ${e instanceof Error ? e.message : 'Unbekannter Fehler'}`);
       }
     })();
     inFlight.current = send;
@@ -157,125 +153,186 @@ export default function ActivityDetail({ activity }: { activity: Activity }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const neighbors = useMemo(
-    () => (orderedIds ? findNeighbors(orderedIds, activity.id) : { prev: null, next: null, index: -1 }),
-    [orderedIds, activity.id]
-  );
+  // Warn before closing the tab with unsaved text.
+  const dirty = notes !== lastSaved || saveState === 'saving';
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [dirty]);
 
-  const goPrev = useCallback(async () => {
-    if (neighbors.prev === null) return;
-    await flushSave();
-    router.push(detailHref(neighbors.prev, searchParams));
-  }, [neighbors.prev, flushSave, router, searchParams]);
+  // ---------------------------------------------------------------------------
+  // Navigation
+  // ---------------------------------------------------------------------------
 
-  const goNext = useCallback(async () => {
-    if (neighbors.next === null) return;
+  const goTo = useCallback(async (id: number | null) => {
+    if (id === null) return;
     await flushSave();
-    router.push(detailHref(neighbors.next, searchParams));
-  }, [neighbors.next, flushSave, router, searchParams]);
+    router.push(detailHref(id, filters));
+  }, [flushSave, router, filters]);
+
+  const goLeft = useCallback(() => void goTo(targets.left), [goTo, targets.left]);
+  const goRight = useCallback(() => void goTo(targets.right), [goTo, targets.right]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
-        void goPrev();
+        goLeft();
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
-        void goNext();
+        goRight();
       } else if (e.key === 'Escape') {
-        void flushSave().then(() => router.push('/'));
+        void flushSave().then(() => router.push(listHref(filters)));
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [goPrev, goNext, flushSave, router]);
+  }, [goLeft, goRight, flushSave, router, filters]);
 
-  const prevDisabled = neighbors.prev === null || saveState === 'saving';
-  const nextDisabled = neighbors.next === null || saveState === 'saving';
+  // Horizontal swipe flips between activities. Ignored on the textarea and
+  // near the screen edges, where iOS uses the gesture for browser back/forward.
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  function onTouchStart(e: React.TouchEvent) {
+    const t = e.touches[0];
+    const nearEdge = t.clientX < 24 || t.clientX > window.innerWidth - 24;
+    touchStart.current =
+      e.target instanceof HTMLTextAreaElement || nearEdge ? null : { x: t.clientX, y: t.clientY };
+  }
+  function onTouchEnd(e: React.TouchEvent) {
+    const start = touchStart.current;
+    touchStart.current = null;
+    if (!start) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (Math.abs(dx) > 80 && Math.abs(dy) < 50) {
+      if (dx > 0) goLeft();
+      else goRight();
+    }
+  }
+
+  const [moreOpen, setMoreOpen] = useState<boolean | null>(null);
+  const leftDate = dateOf(targets.left);
+  const rightDate = dateOf(targets.right);
+  const navBusy = saveState === 'saving';
+  const navUnavailable = neighborsError ? 'Liste konnte nicht geladen werden' : undefined;
+
+  const mapsHref =
+    activity.start_lat != null && activity.start_lon != null
+      ? `https://www.google.com/maps/search/?api=1&query=${activity.start_lat},${activity.start_lon}`
+      : null;
 
   return (
-    <main className="min-h-screen bg-background px-4 py-6">
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div className="sticky top-0 -mx-4 px-4 py-3 bg-background/95 backdrop-blur border-b border-border z-10">
-          <div className="flex items-center justify-between gap-3">
-            <Link href={`/?${buildListQuery(searchParams)}`} className="text-sm text-muted-foreground hover:text-foreground">
-              ← Back to list
+    <div className="flex min-h-dvh flex-col">
+      <header className="sticky top-0 z-10 border-b bg-background/95 pt-[env(safe-area-inset-top)] backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="mx-auto flex h-14 max-w-3xl items-center gap-1 px-2">
+          <Button variant="ghost" size="icon" className="size-11" asChild>
+            <Link href={listHref(filters)} aria-label="Zurück zur Liste" onClick={() => void flushSave()}>
+              <ArrowLeft className="size-5" />
             </Link>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={prevDisabled}
-                onClick={() => void goPrev()}
-                title={neighborsError ? 'Could not load list context' : prevDisabled ? 'No earlier activity' : 'Previous (←)'}
-              >
-                ◀ Prev
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={nextDisabled}
-                onClick={() => void goNext()}
-                title={neighborsError ? 'Could not load list context' : nextDisabled ? 'No later activity' : 'Next (→)'}
-              >
-                Next ▶
-              </Button>
-            </div>
-            <span
-              className={cn(
-                'text-xs min-w-[100px] text-right',
-                saveState === 'saved' && 'text-muted-foreground',
-                saveState === 'saving' && 'text-muted-foreground',
-                saveState === 'error' && 'text-destructive'
-              )}
-            >
-              {saveState === 'saved' && 'Saved ✓'}
-              {saveState === 'saving' && 'Saving…'}
-              {saveState === 'error' && (
-                <button
-                  type="button"
-                  className="underline hover:no-underline"
-                  onClick={() => void persist(notes)}
-                >
-                  Unsaved — retry
-                </button>
-              )}
-            </span>
-          </div>
+          </Button>
+          <span className="flex-1 truncate text-sm font-medium">{fmtDateWithWeekday(activity.date)}</span>
+          <SaveIndicator state={saveState} onRetry={() => void persist(notes)} />
         </div>
+      </header>
 
-        <div className="flex flex-col gap-2">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground leading-snug">
-            {activity.name || '—'}
+      <main
+        className="mx-auto w-full max-w-3xl flex-1 space-y-6 px-4 py-5"
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+      >
+        <div className="space-y-2">
+          <h1 className="text-2xl font-bold leading-tight tracking-tight sm:text-3xl">
+            {activity.name || 'Ohne Titel'}
           </h1>
-          <div className="flex items-center gap-2">
-            <Badge className={cn('rounded-full text-[11px] font-medium', activityBadgeClass(activity.activity_type))}>
-              {fmtActivity(activity.activity_type)}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+            <Badge className={cn('rounded-full text-xs font-medium', activityBadgeClass(activity.activity_type))}>
+              {activityTypeLabel(activity.activity_type)}
             </Badge>
-            <span className="text-xs font-mono text-muted-foreground">{fmtDate(activity.date)}</span>
+            {activity.location_name &&
+              (mapsHref ? (
+                <a
+                  href={mapsHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-h-11 items-center gap-1 underline-offset-4 hover:underline"
+                >
+                  <MapPin className="size-4" />
+                  {activity.location_name}
+                </a>
+              ) : (
+                <span className="inline-flex items-center gap-1">
+                  <MapPin className="size-4" />
+                  {activity.location_name}
+                </span>
+              ))}
           </div>
         </div>
 
-        <ActivityStats activity={activity} layout="wide" />
+        <HeroStats activity={activity} />
 
-        <section className="flex flex-col gap-2">
-          <h2 className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
-            Notes
-          </h2>
+        <section className="space-y-2">
+          <Label htmlFor="notes" className="text-base font-semibold">
+            Tagebuch
+          </Label>
           <Textarea
+            id="notes"
             value={notes}
             onChange={(e) => {
               setNotes(e.target.value);
               scheduleSave(e.target.value);
             }}
             onBlur={() => void flushSave()}
-            rows={12}
-            placeholder="Write about this ride…"
-            className="font-sans text-sm leading-relaxed resize-y"
+            placeholder="Wie war die Fahrt? Wetter, Begleitung, Erlebnisse…"
+            className="min-h-40 resize-none text-base leading-relaxed md:text-base"
           />
         </section>
-      </div>
-    </main>
+
+        <Collapsible open={moreOpen ?? isDesktop ?? false} onOpenChange={setMoreOpen}>
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" className="group -mx-2 h-11 w-[calc(100%+1rem)] justify-between px-2 text-base font-semibold">
+              Weitere Werte
+              <ChevronDown className="size-5 transition-transform group-data-[state=open]:rotate-180" />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="pt-3">
+            <ActivityStats activity={activity} showBasics={false} className="sm:grid-cols-3" />
+          </CollapsibleContent>
+        </Collapsible>
+      </main>
+
+      <nav
+        aria-label="Andere Aktivitäten"
+        className="sticky bottom-0 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur supports-[backdrop-filter]:bg-background/80"
+      >
+        <div className="mx-auto flex max-w-3xl gap-3 px-4 py-2">
+          <Button
+            variant="outline"
+            className="h-11 flex-1 justify-start"
+            disabled={targets.left === null || navBusy}
+            onClick={goLeft}
+            title={navUnavailable ?? 'Taste ←'}
+            aria-label={leftDate ? `Vorherige Aktivität, ${fmtDate(leftDate)}` : 'Vorherige Aktivität'}
+          >
+            <ChevronLeft className="size-5" />
+            {leftDate ? fmtDateShort(leftDate) : 'Zurück'}
+          </Button>
+          <Button
+            variant="outline"
+            className="h-11 flex-1 justify-end"
+            disabled={targets.right === null || navBusy}
+            onClick={goRight}
+            title={navUnavailable ?? 'Taste →'}
+            aria-label={rightDate ? `Nächste Aktivität, ${fmtDate(rightDate)}` : 'Nächste Aktivität'}
+          >
+            {rightDate ? fmtDateShort(rightDate) : 'Weiter'}
+            <ChevronRight className="size-5" />
+          </Button>
+        </div>
+      </nav>
+    </div>
   );
 }
