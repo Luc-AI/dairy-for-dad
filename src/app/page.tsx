@@ -1,22 +1,15 @@
-import ActivityTable from './components/ActivityTable';
-import LogoutButton from './components/LogoutButton';
-import ImportActivitiesButton from './components/ImportActivitiesButton';
+import { Suspense } from 'react';
+import ActivityList from './components/ActivityList';
+import AppHeader from './components/AppHeader';
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-background px-4 py-8">
-      <div className="max-w-[1600px] mx-auto space-y-6">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Activity Log</h1>
-            <p className="text-sm text-muted-foreground mt-1">Garmin history — 2012 to present</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <ImportActivitiesButton />
-            <LogoutButton />
-          </div>
-        </div>
-        <ActivityTable />
+    <main className="min-h-dvh px-4 pt-4 pb-[max(2rem,env(safe-area-inset-bottom))] md:py-8">
+      <div className="mx-auto max-w-[1600px] space-y-3 md:space-y-6">
+        <AppHeader />
+        <Suspense>
+          <ActivityList />
+        </Suspense>
       </div>
     </main>
   );

@@ -13,3 +13,23 @@ export function findNeighbors(ids: number[], currentId: number): Neighbors {
     index,
   };
 }
+
+export interface PagerTargets {
+  left: number | null;
+  right: number | null;
+}
+
+/**
+ * Maps list neighbours onto left/right buttons. When the list is sorted by
+ * date, left always means "older" and right "newer" (like flipping a diary),
+ * regardless of sort direction. Otherwise it follows list order.
+ */
+export function pagerTargets(
+  neighbors: Neighbors,
+  sort: { sort: string; dir: 'asc' | 'desc' }
+): PagerTargets {
+  if (sort.sort === 'date' && sort.dir === 'desc') {
+    return { left: neighbors.next, right: neighbors.prev };
+  }
+  return { left: neighbors.prev, right: neighbors.next };
+}

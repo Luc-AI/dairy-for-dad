@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { sql } from '@/lib/db';
 import { SESSION_COOKIE, isValidSession } from '@/lib/auth';
+import { GROUPED_TYPES, TYPE_GROUPS, isTypeGroup } from '@/lib/activity-types';
 
 const SORTABLE = new Set([
   'date', 'distance_m', 'elevation_gain_m', 'duration_sec',
@@ -23,12 +24,13 @@ export async function GET(req: NextRequest) {
   const sortDirAsc = searchParams.get('sortDir') === 'asc';
   const dateFrom = searchParams.get('dateFrom') ?? '';
   const dateTo = searchParams.get('dateTo') ?? '';
+  const typeGroup = searchParams.get('type');
 
   const column = SORTABLE.has(sortByParam) ? sortByParam : 'date';
   const direction = sortDirAsc ? 'ASC' : 'DESC';
 
   const conditions: string[] = [];
-  const params: (string | number)[] = [];
+  const params: (string | number | string[])[] = [];
 
   if (search) {
     params.push(`%${search}%`);
@@ -46,6 +48,16 @@ export async function GET(req: NextRequest) {
     conditions.push(`date <= $${params.length}`);
   }
 
+  if (isTypeGroup(typeGroup)) {
+    if (typeGroup === 'other') {
+      params.push(GROUPED_TYPES);
+      conditions.push(`(activity_type IS NULL OR NOT (activity_type = ANY($${params.length})))`);
+    } else {
+      params.push(TYPE_GROUPS.find((g) => g.id === typeGroup)!.types);
+      conditions.push(`activity_type = ANY($${params.length})`);
+    }
+  }
+
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const query = `
     SELECT id, date::text AS date, name, activity_type, duration_sec, distance_m, elevation_gain_m,
@@ -53,7 +65,7 @@ export async function GET(req: NextRequest) {
            avg_temperature, min_temperature, max_temperature, location_name, description
     FROM activities
     ${where}
-    ORDER BY ${column} ${direction}
+    ORDER BY ${column} ${direction} NULLS LAST, date DESC, id DESC
   `;
 
   try {
